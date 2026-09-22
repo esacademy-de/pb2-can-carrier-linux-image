@@ -103,16 +103,19 @@ may be hidden"):
    `main_spi0`'s `status = "disabled"` and the new park group correctly
    included in `cpsw3g`'s `pinctrl-0`.
 
-4. **`cpsw_port2` has no efuse-backed MAC address.** The pinned SoC
-   device tree gives `cpsw_port1` a persistent MAC via
-   `ti,syscon-efuse = <&cpsw_mac_syscon 0x0>`, but no board in the
-   pinned BeagleBoard-DeviceTrees tree uses a second efuse slot for
-   port2 — inventing an offset would risk reading undefined efuse
-   content. This carrier instead relies on U-Boot's standard K3 board
-   fixup (persistent `eth1addr` derived from the SoC's unique ID,
-   patched into the DT at boot). Needs a real bring-up check against
-   work order §11 ETH-04 (identical MAC across 5 cold boots) once
-   U-Boot's persistent environment storage is confirmed enabled.
+4. **CONFIRMED BY OWNER — `cpsw_port2` MAC address via U-Boot fixup.**
+   `cpsw_port2` has no efuse-backed MAC address slot in the pinned SoC
+   device tree (only `cpsw_port1` has one, via
+   `ti,syscon-efuse = <&cpsw_mac_syscon 0x0>` — no board in the pinned
+   BeagleBoard-DeviceTrees tree uses a second efuse slot for port2, and
+   inventing an offset would risk reading undefined efuse content).
+   Board owner confirmed keeping the alternative already implemented:
+   U-Boot's standard K3 board fixup (persistent `eth1addr` derived from
+   the SoC's unique ID, patched into the DT at boot) rather than a
+   device-tree-level MAC or a fixed/baked-in address. Design decision
+   closed; still needs a real bring-up check against work order §11
+   ETH-04 (identical MAC across 5 cold boots) once U-Boot's persistent
+   environment storage is confirmed enabled.
 
 5. **RESOLVED — DP83867 reset timing.** Confirmed against the real
    DP83867E datasheet (TI SNLS504G, Appendix B link), §6.7 Reset Timing:
