@@ -1,0 +1,8 @@
+release/
+out/
+*.img
+*.img.xz
+*.dtb
+*.dtbo
+ccache/
+.cache/

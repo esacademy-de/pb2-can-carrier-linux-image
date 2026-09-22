@@ -1,0 +1,49 @@
+# Kernel config fragment for the PB2 CAN Carrier image.
+# Merge onto the pinned 6.18-k3 defconfig with scripts/kconfig/merge_config.sh.
+# Requirements per work order §3.1 — TODO: verify exact symbol names against
+# the pinned 6.18-k3 tree before first build.
+
+# --- PREEMPT_RT / high-resolution timers ---
+CONFIG_PREEMPT_RT=y
+CONFIG_HIGH_RES_TIMERS=y
+
+# --- TI K3/AM62 platform ---
+CONFIG_ARCH_K3=y
+CONFIG_ARCH_K3_AM62_SOC=y
+CONFIG_PINCTRL_SINGLE=y
+CONFIG_GPIO_DAVINCI=y
+
+# --- Serial / console ---
+CONFIG_SERIAL_8250_OMAP=y
+CONFIG_SERIAL_8250_CONSOLE=y
+
+# --- Ethernet: CPSW3G, MDIO, DP83867 ---
+CONFIG_TI_K3_AM65_CPSW_NUSS=y
+CONFIG_TI_DAVINCI_MDIO=y
+CONFIG_DP83867_PHY=y
+
+# --- Storage / bus ---
+CONFIG_MMC_SDHCI_AM654=y
+CONFIG_I2C_OMAP=y
+CONFIG_SPI_TI_QSPI=y
+CONFIG_USB_DWC3=y
+CONFIG_USB_DWC3_TI=y
+CONFIG_REGULATOR=y
+
+# --- CAN: Bosch M_CAN core + TI K3 platform integration ---
+CONFIG_CAN=y
+CONFIG_CAN_RAW=y
+CONFIG_CAN_DEV=y
+CONFIG_CAN_M_CAN=y
+CONFIG_CAN_M_CAN_TCAN4X5X=n
+CONFIG_CAN_M_CAN_PLATFORM=y
+
+# --- Generic PHY framework + generic CAN transceiver PHY (TCAN3413) ---
+CONFIG_GENERIC_PHY=y
+CONFIG_PHY_CAN_TRANSCEIVER=y
+
+# --- LEDs / GPIO character device / overlays ---
+CONFIG_LEDS_GPIO=y
+CONFIG_GPIO_CDEV=y
+CONFIG_OF_OVERLAY=y
+CONFIG_CONFIGFS_FS=y

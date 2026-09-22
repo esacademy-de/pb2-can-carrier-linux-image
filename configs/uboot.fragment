@@ -1,0 +1,15 @@
+# U-Boot config fragment for the PB2 CAN Carrier image.
+# TODO: verify against the pinned U-Boot/SPL tree (manifests/sources.lock)
+# before first build. Requirement: UART0 pinmux + console output in SPL/U-Boot
+# at 115200 8N1 without disabling MAIN_UART6 hardware (work order §7.1),
+# and deterministic carrier overlay loading with a visible failure on a
+# missing/failed overlay (work order §7.1, §12).
+
+CONFIG_CONS_INDEX=1
+CONFIG_BAUDRATE=115200
+CONFIG_OF_LIBFDT_OVERLAY=y
+CONFIG_OF_BOARD_FIXUP=y
+
+# TODO: env vars / boot script changes to load the carrier overlay
+# (dts/k3-am62-pocketbeagle2-can-carrier.dtbo) on every boot, and to fail
+# the boot loudly if it is missing or fails to apply.

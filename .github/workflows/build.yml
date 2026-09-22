@@ -1,0 +1,60 @@
+name: Build
+
+# Cross-compiles the kernel/U-Boot/image and runs static checks. Nothing in
+# this job needs the physical board — see hardware-validation.yml for that.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Reclaim runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android \
+            /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            device-tree-compiler shellcheck python3-yaml python3-pip \
+            crossbuild-essential-arm64 bc bison flex libssl-dev \
+            u-boot-tools
+
+      - name: Shellcheck build scripts
+        run: shellcheck scripts/*.sh
+
+      - name: Syntax-check any device-tree overlays present
+        run: |
+          shopt -s nullglob globstar
+          files=(dts/**/*.dtso)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no .dtso files yet — skipping"
+            exit 0
+          fi
+          status=0
+          for f in "${files[@]}"; do
+            echo "::group::dtc -I dts -O dtb -W all -o /dev/null $f"
+            dtc -@ -I dts -O dtb -W all -o /dev/null "$f" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      # TODO: once manifests/sources.lock is pinned and scripts/build-image.sh
+      # is implemented, add steps here to:
+      #   - clone pinned kernel/U-Boot/device-tree sources
+      #   - apply patches/kernel/*
+      #   - run dt_binding_check / dtbs_check against the modified bindings
+      #   - build the kernel, U-Boot, and Debian rootfs image
+      #   - checksum and upload the image as a build artifact (release/)
+      # Cache the kernel source tree / ccache / apt downloads with
+      # actions/cache to keep this fast within the free-tier minutes budget.

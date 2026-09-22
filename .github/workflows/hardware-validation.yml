@@ -1,0 +1,34 @@
+name: Hardware validation
+
+# Flashes the built image to microSD and runs the §11 smoke tests against a
+# physically attached PocketBeagle 2 + CAN carrier. Requires a self-hosted
+# runner registered with the label below (Settings → Actions → Runners →
+# New self-hosted runner) on a bench machine with the board connected.
+#
+# Manual trigger only for now — there is no runner registered yet, and this
+# must never block PRs the way the hosted static-checks job does.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  validate:
+    runs-on: [self-hosted, pb2-bench]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Flash image and run automated smoke tests
+        run: scripts/flash-and-verify.sh
+
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardware-validation-evidence
+          path: release/evidence/**
+          if-no-files-found: warn
+
+      # Tests needing a scope/logic analyzer (CAN-01) or camera/video (ETH-05)
+      # are not automatable here — capture that evidence manually per
+      # work order §11 and attach it to the release alongside this run.

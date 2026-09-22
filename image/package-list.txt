@@ -1,0 +1,13 @@
+# Root filesystem package list (work order §3, §7.2).
+# TODO: pin exact versions against the Debian snapshot recorded in
+# manifests/sources.lock before first build.
+
+systemd
+can-utils
+libgpiod2
+gpiod
+ethtool
+iproute2
+usbutils
+mmc-utils
+rt-tests

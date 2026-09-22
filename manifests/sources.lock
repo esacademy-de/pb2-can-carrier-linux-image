@@ -1,0 +1,29 @@
+# Pinned source revisions for the PB2 CAN Carrier Linux image.
+#
+# TODO: fill in exact commits/tags before the first real build (work order
+# §3, §9.1, §10 step 2). Every entry must be an immutable commit or tag —
+# never a moving branch (work order Appendix B, "Version discipline").
+
+[beagleboard-debian-image-builder]
+repo = "TODO: https://github.com/beagleboard/beagleboard-image-builder"
+ref  = "TODO: pin exact commit/tag"
+
+[linux-kernel]
+repo = "TODO: pin the 6.18-k3 tree used"
+ref  = "TODO: pin exact commit/tag"
+rt_patch = "TODO: record PREEMPT_RT patch provenance"
+
+[uboot]
+repo = "TODO: pin the PB2-supported U-Boot/SPL tree"
+ref  = "TODO: pin exact commit/tag"
+
+[device-tree]
+repo = "https://github.com/beagleboard/BeagleBoard-DeviceTrees"
+ref  = "TODO: pin exact commit/tag on the v6.18.x branch"
+base_dts = "src/arm64/ti/k3-am62-pocketbeagle2.dts"
+
+[debian-snapshot]
+repo = "TODO: record Debian snapshot/repository state used for the rootfs"
+
+[toolchain]
+cross_compiler = "TODO: record exact aarch64 cross-toolchain version"
