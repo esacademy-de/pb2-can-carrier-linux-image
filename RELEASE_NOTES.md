@@ -221,27 +221,44 @@ may be hidden"):
    certification must come from a human author before upstream
    submission (work order §6.1); an AI agent must not fabricate it.
 
-9. **UNRESOLVED, newly discovered on real hardware — Ethernet (CPSW/MDIO)
-   pinmux conflict.** `dmesg` on real hardware shows:
+9. **ROOT-CAUSED AND FIXED, pending real-hardware reflash confirmation —
+   Ethernet (CPSW/MDIO) pinmux conflict, another dual-ball companion pad
+   (work order §5.2), same class as the two already found in review
+   (main_spi0/GPIO1_17 at P2.29, epwm2/GPIO1_28 at P1.33).** Discovered
+   live on real hardware via `dmesg`:
    `pinctrl-single f4000.pinctrl: pin PIN88 already requested by
    23120000.pwm; cannot claim for 8000000.ethernet`, followed by
    `am65-cpsw-nuss 8000000.ethernet: Error applying setting, reverse
-   things back` and a stalled `sync_state()` for the ethernet device —
-   CPSW/MDIO0 never finishes probing, so Ethernet is currently not
-   functional on this image. Our carrier overlay does not touch any PWM
-   node, so this looks like a pre-existing conflict in the base
-   PocketBeagle2/image-builder device tree rather than something
-   introduced here, but that hasn't been traced to its source yet. Not
-   yet investigated further — needed before ETH-01..ETH-05 (work order
-   §11) can be attempted.
+   things back` and a stalled `sync_state()` — CPSW/MDIO0 never finished
+   probing, so Ethernet was not functional on the image tested on
+   hardware. Traced to source: header pin **P2.01** is a dual-ball
+   position — ball **AD24** (offset `0x0160`, `MDIO0_MDC`, pinctrl-single
+   index 88 — confirmed `0x0160 / 4 = 88`, matching the "PIN88" in the
+   error) and ball **B20** (offset `0x01a4`, `ECAP2_IN_APWM_OUT`) are
+   physically the same header pin. The base PocketBeagle2 DTS
+   (`k3-am62-pocketbeagle2-pinmux.dtsi`) keeps `&ecap2` enabled by
+   default with a pinctrl group that claims *both* balls — B20 actively,
+   AD24 parked as its companion. Our overlay claims AD24 for `MDIO0_MDC`
+   and parks B20 as `GPIO1_11`, but never disabled the stock `&ecap2`
+   node, so its request for AD24 won the probe-order race and `cpsw3g`'s
+   own request for the same pad failed. Fix: `dts/k3-am62-pocketbeagle2-can-carrier.dtso`
+   now disables `&ecap2` (nothing on this carrier uses ECAP2 PWM
+   capture), matching the pattern already used for `main_spi0` and
+   `epwm2`. Verified so far: `dtc -W all` compiles the overlay clean, the
+   real base `.dtb` merges cleanly via `fdtoverlay`, and the merged
+   output confirms only `cpsw3g` (via `main_mdio0_pins_default`) actively
+   claims pad `0x0160` — `ecap2`'s own claim on it is now inert because
+   `ecap2` itself is `status = "disabled"`. **Not yet re-flashed and
+   booted on real hardware** — that's the next step before ETH-01..
+   ETH-05 (work order §11) can be attempted.
 
 ## Hardware bring-up status
 
 Owner-driven bring-up on real hardware is underway (not yet complete).
 Confirmed so far, via live UART console debugging with the owner:
 - **CON-01/CON-02 (UART0 carrier console): RESOLVED**, see item 6 above.
-- **ETH (Ethernet): currently broken**, see item 9 above — a real defect
-  found on hardware, not yet root-caused.
+- **ETH (Ethernet): root-caused and fixed in the overlay, not yet
+  re-verified on hardware**, see item 9 above.
 
 Every other item in work order §11's validation matrix (CAN-01..CAN-05,
 remaining ETH items, etc.) has not been attempted yet — see

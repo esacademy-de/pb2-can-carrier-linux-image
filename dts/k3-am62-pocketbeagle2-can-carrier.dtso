@@ -308,6 +308,25 @@
 	status = "disabled";
 };
 
+/* MDIO0_MDC vs ecap2 (found on real hardware, RELEASE_NOTES.md item 9):
+ * P2.01 is a dual-ball position -- AD24 (0x0160, MDIO0_MDC, claimed by
+ * main_mdio0_pins_default above) and B20 (0x01a4, ECAP2_IN_APWM_OUT,
+ * parked as GPIO1_11 by main_mdio0_companion_park above) are two
+ * different SoC balls physically tied to the same header pin, same
+ * pattern as the P2.29/eth_reset and P1.33/epwm2 companions elsewhere in
+ * this file. The stock PB2 DTS keeps &ecap2 enabled by default
+ * (k3-am62-pocketbeagle2-pinmux.dtsi) with a pinctrl-0 that claims BOTH
+ * balls -- B20 actively as ECAP2_IN_APWM_OUT, and AD24 parked as its
+ * companion. Left enabled, ecap2's own pinctrl-single request for AD24
+ * (pin index 88 in the pinctrl-single driver's own numbering: 0x0160 / 4
+ * = 88) wins the probe-order race, and cpsw3g's own request for that
+ * same pad then fails with -EINVAL ("pin-88 ... already requested by
+ * 23120000.pwm"), confirmed on real hardware. Nothing on this carrier
+ * uses ECAP2 PWM capture. */
+&ecap2 {
+	status = "disabled";
+};
+
 &cpsw3g {
 	pinctrl-names = "default";
 	pinctrl-0 = <&main_rgmii2_pins_default &main_mdio0_pins_default
