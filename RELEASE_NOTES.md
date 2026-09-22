@@ -263,10 +263,11 @@ may be hidden"):
      Changed `&cpsw_port2`'s `phy-mode` to `"rgmii-id"` anyway, for a
      clean boot log — zero functional change, PHY-side `ti,rx-internal-delay`
      and the unprogrammed PHY TX delay (work order §4.3.1) are untouched.
-     Verified: `dtc -W all` compiles clean, `fdtoverlay` merge confirms
-     `phy-mode = "rgmii-id"` in the merged tree. **Not yet re-verified on
-     real hardware** (this specific change came after the last hardware
-     test).
+     **Confirmed on real hardware**: after reflashing, the warning is
+     gone and `dmesg` shows `configuring for phy/rgmii-rxid link mode` —
+     confirming the driver's internal remap to `RGMII_RXID` behaves
+     exactly as predicted, identical to the previous setting's actual
+     runtime mode.
    - **Caveat on the `dmesg`/`ip link show` output used to confirm the
      MDIO0 fix**: it was captured with the CAN carrier board (and its
      DP83867 PHY chip) *not yet physically attached* to the PocketBeagle
@@ -284,7 +285,7 @@ Owner-driven bring-up on real hardware is underway (not yet complete).
 Confirmed so far, via live UART console debugging with the owner:
 - **CON-01/CON-02 (UART0 carrier console): RESOLVED**, see item 6 above.
 - **ETH (Ethernet) MDIO0/PIN88 pinmux conflict: RESOLVED, confirmed on
-  hardware.** RGMII TX delay warning also fixed, not yet re-verified.
+  hardware.** RGMII TX delay warning fix also confirmed on hardware.
   Real PHY link status still unverified (carrier board not yet
   attached). See item 9 above.
 
