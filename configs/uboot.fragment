@@ -53,18 +53,31 @@ CONFIG_OF_BOARD_FIXUP=y
 #
 # APPEND kernel command line (work order §5.5):
 #
-#   earlycon=ns16550a,mmio32,0x02800000,115200n8 console=ttyS7,115200n8 console=ttyS2,115200n8
+#   earlycon=ns16550a,mmio32,0x02800000,115200n8 console=ttyS0,115200n8 console=ttyS1,115200n8
 #
 # earlycon address 0x02800000 is main_uart0's MMIO base (verified against
 # k3-am62-main.dtsi: `main_uart0: serial@2800000`) -- this half is
 # address-based and does not depend on enumeration order.
 #
-# The `console=ttySN` device names ARE enumeration-order-dependent and are
-# only a best guess from the DT aliases (serial7 = main_uart0, serial2 =
-# main_uart6 in the stock PB2 DTS): TODO confirm the real /dev/ttySN
-# mapping from `dmesg | grep ttyS` on first boot and correct these two
-# values before considering CON-01/CON-02 (work order §11) satisfied --
-# this is exactly the ambiguity work order §5.5 calls out ("document and
-# test the exact kernel command line ... instead of relying on incidental
-# enumeration order"). The first `console=` argument wins for
-# /dev/console; list UART0 first since it is the required primary.
+# The `console=ttySN` device names ARE enumeration-order-dependent.
+# CORRECTED reasoning: they are NOT DT-alias-based -- checked the real
+# driver source (drivers/tty/serial/8250/8250_omap.c and 8250_core.c at
+# linux-stable v6.18): neither calls of_alias_get_id(), so this platform's
+# 8250 driver does not use the serial0..serial7 DT aliases to assign
+# /dev/ttySN numbers. The actual mechanism is dynamic assignment in
+# kernel probe order. Of the UARTs enabled in the final merged tree, only
+# main_uart0 (serial@2800000) and main_uart6 (serial@2860000) actually
+# probe as ttyS devices (wkup_uart0/main_uart1 are status="reserved" for
+# DM firmware and won't). main_uart0 precedes main_uart6 in
+# k3-am62-main.dtsi's document/address order, so IF probe order follows
+# compiled DTB node order (the common case with no other deferred-probe
+# dependency forcing reordering), ttyS0=UART0 and ttyS1=UART6 is the most
+# likely mapping -- revised down from an earlier, wrongly-reasoned
+# ttyS7/ttyS2 guess. This is still an inference, not a fact: TODO confirm
+# the real /dev/ttySN mapping from `dmesg | grep ttyS` on first boot and
+# correct these two values before considering CON-01/CON-02 (work order
+# §11) satisfied -- this is exactly the ambiguity work order §5.5 calls
+# out ("document and test the exact kernel command line ... instead of
+# relying on incidental enumeration order"). The first `console=`
+# argument wins for /dev/console; list UART0 first since it is the
+# required primary.

@@ -322,13 +322,15 @@
 		 * §4.3.1: decoded PHY TX delay strap = 0 ns; the AM62x MAC
 		 * side supplies TX timing per D-10). */
 		reset-gpios = <&main_gpio0 40 GPIO_ACTIVE_LOW>;
-		/* Conservative reset timing pending datasheet-timing
-		 * confirmation during hardware bring-up (work order
-		 * Appendix B DP83867 datasheet); DP83867 requires >=1ms
-		 * RESET_N assert and settles well within 5ms after
-		 * deassert. */
+		/* Confirmed against the DP83867E datasheet (TI SNLS504G),
+		 * §6.7 Reset Timing (work order Appendix B link): T4 (RESET_N
+		 * minimum assert pulse width) = 1us; T1 (settling time after
+		 * deassert before the PHY accepts MDIO register accesses) =
+		 * 195us nominal. Both values below carry a >5x safety margin
+		 * over those datasheet minimums/nominals for process/voltage/
+		 * temperature variation. */
 		reset-assert-us = <1000>;
-		reset-deassert-us = <5000>;
+		reset-deassert-us = <1000>;
 		interrupt-parent = <&main_gpio1>;
 		interrupts = <18 IRQ_TYPE_LEVEL_LOW>;
 	};

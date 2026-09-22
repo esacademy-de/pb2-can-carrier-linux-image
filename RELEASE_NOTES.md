@@ -108,16 +108,26 @@ may be hidden"):
    work order §11 ETH-04 (identical MAC across 5 cold boots) once
    U-Boot's persistent environment storage is confirmed enabled.
 
-5. **DP83867 reset timing is a placeholder.** `reset-assert-us = <1000>`
-   / `reset-deassert-us = <5000>` are conservative values, not sourced
-   from the DP83867E datasheet's exact RESET_N timing table (Appendix B
-   link). Confirm/tighten during bring-up.
+5. **RESOLVED — DP83867 reset timing.** Confirmed against the real
+   DP83867E datasheet (TI SNLS504G, Appendix B link), §6.7 Reset Timing:
+   RESET_N minimum assert pulse (T4) = 1 µs; settling time after
+   deassert before MDIO register access (T1) = 195 µs nominal.
+   `reset-assert-us = <1000>` / `reset-deassert-us = <1000>` both carry
+   a >5x safety margin over those figures.
 
-6. **UART0 `console=ttySN` device name is an unconfirmed guess.**
-   `configs/uboot.fragment` derives it from the DT `serial7`/`serial2`
-   aliases, but Linux's actual `/dev/ttySN` enumeration for these ports
-   hasn't been observed on real hardware. This is exactly the ambiguity
-   work order §5.5 asks to test and document rather than assume — do
+6. **UART0 `console=ttySN` device name is still an unconfirmed guess —
+   and my original reasoning for it was wrong.** `configs/uboot.fragment`
+   previously derived the guess from the DT `serial7`/`serial2` aliases.
+   Checked the actual driver source (`drivers/tty/serial/8250/8250_omap.c`
+   and `8250_core.c` at linux-stable v6.18): neither calls
+   `of_alias_get_id()` — this platform's 8250 driver does **not** use DT
+   aliases to assign `/dev/ttySN` numbers at all. The real mechanism is
+   dynamic assignment in kernel probe order, which for two UART nodes
+   with no other probe-order dependencies most likely (not guaranteed)
+   follows the compiled DTB's node order — but that is still an inference
+   from driver behavior, not a fact I can assert without booting real
+   hardware. This is exactly the ambiguity work order §5.5 asks to test
+   and document rather than assume — do
    that on first boot (`dmesg | grep ttyS`) before considering CON-01/
    CON-02 satisfied. The `earlycon=` half of the cmdline is
    address-based and does not have this problem.
