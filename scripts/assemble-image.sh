@@ -115,7 +115,7 @@ content = content.replace(
 )
 carrier_label = """label PB2 CAN Carrier
     kernel /Image.gz
-    append console=ttyS0,115200n8 console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02800000,115200n8 root=/dev/mmcblk1p3 ro rootfstype=ext4 fsck.repair=yes resume=/dev/mmcblk1p2 rootwait net.ifnames=0
+    append console=ttyS7,115200n8 earlycon=ns16550a,mmio32,0x02860000 root=/dev/mmcblk1p3 ro rootfstype=ext4 fsck.repair=yes resume=/dev/mmcblk1p2 rootwait net.ifnames=0
     fdtdir /
     fdtoverlays /overlays/k3-am62-pocketbeagle2-can-carrier.dtbo
     #initrd /initrd.img

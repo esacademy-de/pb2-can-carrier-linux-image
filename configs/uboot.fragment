@@ -55,23 +55,42 @@ CONFIG_OF_BOARD_FIXUP=y
 # it does not modify image-builder's own templates.
 #
 # append kernel command line (work order §5.5), also injected by
-# scripts/assemble-image.sh:
+# scripts/assemble-image.sh -- CONFIRMED on real hardware (see
+# RELEASE_NOTES.md item 6):
 #
-#   console=ttyS0,115200n8 console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02800000,115200n8
+#   console=ttyS7,115200n8 earlycon=ns16550a,mmio32,0x02860000
 #
-# - earlycon address 0x02800000 is main_uart0's MMIO base (verified
-#   against k3-am62-main.dtsi: `main_uart0: serial@2800000`) -- shows
-#   very-early kernel messages on the real UART0 hardware regardless of
-#   what /dev/ttySN it ends up as.
-# - ttyS2 for MAIN_UART6 is CONFIRMED, extracted directly from
-#   BeagleBoard's real shipped extlinux template -- not guessed.
-# - ttyS0 for UART0 is still a guess, hedged by listing ttyS2 second as a
-#   working fallback. The `/dev/ttySN` device names are enumeration-order
-#   dependent, and this platform's 8250-omap driver does not call
-#   of_alias_get_id() (checked the real driver source at linux-stable
-#   v6.18) -- so it does NOT use the serial0..serial7 DT aliases to
-#   assign numbers, ruling out that earlier line of reasoning. TODO:
-#   confirm the real mapping via `dmesg | grep ttyS` on first boot and
-#   correct the `ttyS0` guess in the injected extlinux entry if wrong,
-#   before considering CON-01/CON-02 (work order §11) satisfied. The
-#   first `console=` argument wins for /dev/console.
+# - ttyS7 is UART0's real /dev/ttySN name (confirmed via `dmesg | grep
+#   ttyS` on real hardware -- the earlier `ttyS0` guess was wrong; this
+#   platform's 8250-omap driver does not call of_alias_get_id(), so
+#   /dev/ttySN assignment is registration-order dependent, not DT-alias
+#   dependent).
+# - earlycon stays on UART6 (0x02860000), NOT UART0. UART0's peripheral
+#   clock is never enabled by the stock, unmodified bb-u-boot-pocketbeagle2
+#   firmware (which only drives MAIN_UART6), so pointing earlycon's raw
+#   MMIO access at UART0 before Linux's clock driver has run hangs the
+#   CPU outright (confirmed on real hardware -- total silence on both
+#   UARTs, no USB enumeration). earlycon on UART6 is safe because U-Boot
+#   already has that UART clocked and configured.
+# - NO baud suffix on earlycon=. Stock BeagleBoard extlinux templates
+#   also omit it. Per the kernel's earlycon docs, omitting the baud means
+#   "inherit whatever U-Boot already configured" -- appending
+#   `,115200n8` makes earlycon actively reprogram the UART against an
+#   assumed reference clock, which produced garbled output (confirmed on
+#   real hardware).
+# - Only ONE console= argument (ttyS7), not two. Registering both ttyS7
+#   and ttyS2 as simultaneous kernel consoles was confirmed on real
+#   hardware to corrupt UART6's TTY output right at the ttyS7 driver
+#   handoff (`printk: legacy console [ttyS7] disabled/enabled`), even
+#   though the UART0 peripheral itself is fine in isolation (verified by
+#   writing test strings directly to /dev/ttyS7 with `stty`/`printf`
+#   while UART6 was still the sole console). Root cause not pinned down
+#   further than "dual active kernel consoles on this 8250 setup
+#   corrupts one of them during handoff" -- since the work order only
+#   needs one working carrier console, the fix is simply not to enable
+#   both. With ttyS7 alone, early boot messages (pre ~2.6s, before the
+#   8250 driver takes over from the earlycon boot console) are only
+#   visible on UART6's physical pin, not on UART0 -- a documented
+#   limitation, same class as the SPL/U-Boot-stage limitation below.
+# - The first `console=` argument wins for /dev/console; moot here since
+#   there is only one.

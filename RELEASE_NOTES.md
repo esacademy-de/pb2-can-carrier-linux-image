@@ -173,27 +173,43 @@ may be hidden"):
    `reset-assert-us = <1000>` / `reset-deassert-us = <1000>` both carry
    a >5x safety margin over those figures.
 
-6. **PARTIALLY RESOLVED — UART0 `console=ttySN` device name.**
-   MAIN_UART6's real, shipped console device is now confirmed: `ttyS2` —
-   extracted directly from BeagleBoard's own real
-   `microsd-extlinux-w-swap.conf` (inside the `bb-u-boot-pocketbeagle2`
-   package), not reasoned or guessed. The carrier's own extlinux entry
-   (injected by `scripts/assemble-image.sh`) now uses that confirmed
-   value for the fallback console. UART0's number is still unconfirmed —
-   no stock reference enables it, so there's nothing real to extract it
-   from — and my original reasoning for guessing it (DT `serial7`/`serial2`
-   aliases) was wrong: the actual 8250-omap driver doesn't call
-   `of_alias_get_id()`, so `/dev/ttySN` assignment is dynamic probe-order,
-   not alias-based. The injected boot entry hedges instead of guessing
-   confidently: `console=ttyS0,115200n8 console=ttyS2,115200n8
-   earlycon=ns16550a,mmio32,0x02800000,115200n8` — tries `ttyS0` for
-   UART0, keeps the confirmed `ttyS2` (UART6) as a working fallback, and
-   the address-based `earlycon` shows very-early kernel messages on the
-   real UART0 hardware regardless of which `ttySN` it ends up as. This is
-   exactly the ambiguity work order §5.5 asks to test and document rather
-   than assume — confirm the real mapping via `dmesg | grep ttyS` on
-   first boot before considering CON-01/CON-02 satisfied, and correct the
-   `ttyS0` guess in the extlinux entry if it's wrong.
+6. **RESOLVED — UART0 primary console (CON-01/CON-02).** Confirmed
+   working end-to-end on real hardware. Final injected `append` line
+   (`scripts/assemble-image.sh`, `configs/uboot.fragment`):
+   `console=ttyS7,115200n8 earlycon=ns16550a,mmio32,0x02860000`.
+   Findings, all confirmed on real hardware via iterative UART bring-up
+   (owner-driven, live console captures on both UART6 and UART0):
+   - **`ttyS7` is UART0's real `/dev/ttySN` name**, found via `dmesg |
+     grep ttyS` — the original `ttyS0` guess was wrong. Confirmed: the
+     8250-omap driver doesn't call `of_alias_get_id()`, so assignment is
+     registration-order dependent, not DT-alias based.
+   - **`earlycon` must stay on UART6 (`0x02860000`), not UART0.** UART0's
+     peripheral clock is never enabled by the stock, unmodified
+     `bb-u-boot-pocketbeagle2` firmware. Pointing `earlycon`'s raw MMIO
+     probe at UART0 before Linux's clock driver runs hung the CPU outright
+     (total silence on both UARTs, no USB enumeration) — reverted once
+     confirmed. UART6 is safe because U-Boot already has it clocked.
+   - **No baud suffix on `earlycon=`.** Matches BeagleBoard's own stock
+     extlinux templates. Per kernel docs, omitting the baud means
+     "inherit U-Boot's config"; adding `,115200n8` makes `earlycon`
+     actively reprogram the UART against an assumed reference clock,
+     which produced garbled output on real hardware.
+   - **Only `ttyS7` in `console=` — not both `ttyS7` and `ttyS2`
+     together.** Registering both as simultaneous active kernel consoles
+     corrupted UART6's output right at the `ttyS7` driver handoff
+     (`printk: legacy console [ttyS7] disabled/enabled`), even though the
+     UART0 peripheral is fine in isolation — verified by writing test
+     strings directly to `/dev/ttyS7` via `stty`/`printf` while UART6 was
+     still the sole console, which came through clean. With `ttyS2`
+     dropped from `console=`, UART6's log stays clean start to finish and
+     `ttyS7` alone carries clean kernel output plus a working login
+     prompt, confirmed via a full boot with a TTL adapter on P1.30.
+   - **Known, accepted limitation:** with `earlycon` on UART6, the very
+     earliest boot messages (pre ~2.6s, before the 8250 driver hands off
+     from the earlycon boot console) are visible only on UART6, not on
+     UART0. Same class of limitation as the SPL/U-Boot-stage console
+     (item 1) — closing it fully would need the same custom-signed
+     U-Boot build, not done for the same reasons.
 
 7. **`manifests/sources.lock`** still has two open TODOs:
    `beagleboard/image-builder`'s exact build-time commit (currently
@@ -205,9 +221,29 @@ may be hidden"):
    certification must come from a human author before upstream
    submission (work order §6.1); an AI agent must not fabricate it.
 
-## Not yet run at all
+9. **UNRESOLVED, newly discovered on real hardware — Ethernet (CPSW/MDIO)
+   pinmux conflict.** `dmesg` on real hardware shows:
+   `pinctrl-single f4000.pinctrl: pin PIN88 already requested by
+   23120000.pwm; cannot claim for 8000000.ethernet`, followed by
+   `am65-cpsw-nuss 8000000.ethernet: Error applying setting, reverse
+   things back` and a stalled `sync_state()` for the ethernet device —
+   CPSW/MDIO0 never finishes probing, so Ethernet is currently not
+   functional on this image. Our carrier overlay does not touch any PWM
+   node, so this looks like a pre-existing conflict in the base
+   PocketBeagle2/image-builder device tree rather than something
+   introduced here, but that hasn't been traced to its source yet. Not
+   yet investigated further — needed before ETH-01..ETH-05 (work order
+   §11) can be attempted.
 
-Every item in work order §11's validation matrix requires the physical
-board and is explicitly out of scope for this stage — see
+## Hardware bring-up status
+
+Owner-driven bring-up on real hardware is underway (not yet complete).
+Confirmed so far, via live UART console debugging with the owner:
+- **CON-01/CON-02 (UART0 carrier console): RESOLVED**, see item 6 above.
+- **ETH (Ethernet): currently broken**, see item 9 above — a real defect
+  found on hardware, not yet root-caused.
+
+Every other item in work order §11's validation matrix (CAN-01..CAN-05,
+remaining ETH items, etc.) has not been attempted yet — see
 `tests/README.md` for the full list and which items are automatable once
 hardware is available.
