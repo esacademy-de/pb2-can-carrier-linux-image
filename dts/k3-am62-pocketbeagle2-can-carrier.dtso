@@ -336,7 +336,18 @@
 };
 
 &cpsw_port2 {
-	phy-mode = "rgmii-rxid";
+	/* "rgmii-id", not "rgmii-rxid" (found on real hardware, dmesg: "RGMII
+	 * mode without internal TX delay unsupported; please fix your Device
+	 * Tree"). am65-cpsw-nuss.c has a fixed, always-on internal TX delay
+	 * in RGMII mode for this MAC IP -- not board-configurable, not
+	 * optional. The driver silently remaps "rgmii-id" -> "rgmii-rxid"
+	 * internally (same PHY-side RX-delay-only behavior we already
+	 * configured via ti,rx-internal-delay below, TX delay still left
+	 * unprogrammed on the PHY per the decoded hardware straps, work
+	 * order §4.3.1) and only warns when the DT claims no TX delay exists
+	 * anywhere ("rgmii" or "rgmii-rxid") -- which was this carrier's
+	 * previous, incorrect setting for this specific MAC driver. */
+	phy-mode = "rgmii-id";
 	phy-handle = <&cpsw3g_phy1>;
 	status = "okay";
 	/* mac-address left unset: this SoC's cpsw_port1 gets its MAC from

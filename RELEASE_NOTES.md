@@ -221,44 +221,72 @@ may be hidden"):
    certification must come from a human author before upstream
    submission (work order §6.1); an AI agent must not fabricate it.
 
-9. **ROOT-CAUSED AND FIXED, pending real-hardware reflash confirmation —
-   Ethernet (CPSW/MDIO) pinmux conflict, another dual-ball companion pad
-   (work order §5.2), same class as the two already found in review
-   (main_spi0/GPIO1_17 at P2.29, epwm2/GPIO1_28 at P1.33).** Discovered
-   live on real hardware via `dmesg`:
-   `pinctrl-single f4000.pinctrl: pin PIN88 already requested by
-   23120000.pwm; cannot claim for 8000000.ethernet`, followed by
-   `am65-cpsw-nuss 8000000.ethernet: Error applying setting, reverse
-   things back` and a stalled `sync_state()` — CPSW/MDIO0 never finished
-   probing, so Ethernet was not functional on the image tested on
-   hardware. Traced to source: header pin **P2.01** is a dual-ball
-   position — ball **AD24** (offset `0x0160`, `MDIO0_MDC`, pinctrl-single
-   index 88 — confirmed `0x0160 / 4 = 88`, matching the "PIN88" in the
-   error) and ball **B20** (offset `0x01a4`, `ECAP2_IN_APWM_OUT`) are
-   physically the same header pin. The base PocketBeagle2 DTS
-   (`k3-am62-pocketbeagle2-pinmux.dtsi`) keeps `&ecap2` enabled by
-   default with a pinctrl group that claims *both* balls — B20 actively,
-   AD24 parked as its companion. Our overlay claims AD24 for `MDIO0_MDC`
-   and parks B20 as `GPIO1_11`, but never disabled the stock `&ecap2`
-   node, so its request for AD24 won the probe-order race and `cpsw3g`'s
-   own request for the same pad failed. Fix: `dts/k3-am62-pocketbeagle2-can-carrier.dtso`
-   now disables `&ecap2` (nothing on this carrier uses ECAP2 PWM
-   capture), matching the pattern already used for `main_spi0` and
-   `epwm2`. Verified so far: `dtc -W all` compiles the overlay clean, the
-   real base `.dtb` merges cleanly via `fdtoverlay`, and the merged
-   output confirms only `cpsw3g` (via `main_mdio0_pins_default`) actively
-   claims pad `0x0160` — `ecap2`'s own claim on it is now inert because
-   `ecap2` itself is `status = "disabled"`. **Not yet re-flashed and
-   booted on real hardware** — that's the next step before ETH-01..
-   ETH-05 (work order §11) can be attempted.
+9. **RESOLVED, confirmed on real hardware (MDIO0 pinmux) + fixed pending
+   re-verification (RGMII TX delay warning) — Ethernet (CPSW/MDIO).**
+   Two separate findings from real-hardware bring-up:
+   - **MDIO0/PIN88 pinmux conflict — CONFIRMED FIXED on real hardware.**
+     Another dual-ball companion pad (work order §5.2), same class as the
+     two already found in review (`main_spi0`/GPIO1_17 at P2.29,
+     `epwm2`/GPIO1_28 at P1.33). Originally seen via `dmesg`:
+     `pinctrl-single f4000.pinctrl: pin PIN88 already requested by
+     23120000.pwm; cannot claim for 8000000.ethernet`, followed by
+     `am65-cpsw-nuss 8000000.ethernet: Error applying setting, reverse
+     things back` — CPSW/MDIO0 never finished probing. Traced to source:
+     header pin **P2.01** is a dual-ball position — ball **AD24** (offset
+     `0x0160`, `MDIO0_MDC`, pinctrl-single index 88 — confirmed
+     `0x0160 / 4 = 88`, matching the "PIN88" in the error) and ball
+     **B20** (offset `0x01a4`, `ECAP2_IN_APWM_OUT`) are physically the
+     same header pin. The base PocketBeagle2 DTS
+     (`k3-am62-pocketbeagle2-pinmux.dtsi`) keeps `&ecap2` enabled by
+     default with a pinctrl group that claims *both* balls — B20
+     actively, AD24 parked as its companion — so its claim on AD24 won
+     the probe-order race against `cpsw3g`'s own claim on the same pad.
+     Fix: `dts/k3-am62-pocketbeagle2-can-carrier.dtso` now disables
+     `&ecap2` (nothing on this carrier uses ECAP2 PWM capture), matching
+     the pattern already used for `main_spi0` and `epwm2`. **Confirmed on
+     real hardware**: after reflashing the rebuilt `.dtbo`, `dmesg` shows
+     `davinci_mdio` probing cleanly with no `pin-88`/`PIN88` errors, and
+     `eth0` appears in `ip link show`.
+   - **RGMII TX delay `dev_warn` — cosmetic, harmless, fixed anyway.**
+     Separately, `dmesg` showed `am65-cpsw-nuss 8000000.ethernet: RGMII
+     mode without internal TX delay unsupported; please fix your Device
+     Tree`. Traced to `drivers/net/ethernet/ti/am65-cpsw-nuss.c`: this
+     specific CPSW MAC IP has a **fixed, always-on internal TX delay in
+     RGMII mode that isn't board-configurable**; the driver silently
+     remaps a DT `phy-mode` of `"rgmii-id"` to `"rgmii-rxid"` internally
+     and only *warns* (without changing behavior) when the DT claims no
+     TX delay exists anywhere (`"rgmii"` or `"rgmii-rxid"`, our overlay's
+     previous setting). Functionally harmless — both cases resolve to the
+     identical final `RGMII_RXID` mode the PHY driver sees, and upstream's
+     own `k3-am625-sk-common.dtsi` reference board carries the exact same
+     `"rgmii-rxid"` setting and would trigger the identical warning.
+     Changed `&cpsw_port2`'s `phy-mode` to `"rgmii-id"` anyway, for a
+     clean boot log — zero functional change, PHY-side `ti,rx-internal-delay`
+     and the unprogrammed PHY TX delay (work order §4.3.1) are untouched.
+     Verified: `dtc -W all` compiles clean, `fdtoverlay` merge confirms
+     `phy-mode = "rgmii-id"` in the merged tree. **Not yet re-verified on
+     real hardware** (this specific change came after the last hardware
+     test).
+   - **Caveat on the `dmesg`/`ip link show` output used to confirm the
+     MDIO0 fix**: it was captured with the CAN carrier board (and its
+     DP83867 PHY chip) *not yet physically attached* to the PocketBeagle
+     2. The PHY bound as generic (`driver unknown` → `Generic PHY`, not
+     the TI-specific `dp83867` driver that `CONFIG_DP83867_PHY=y` already
+     enables) and reported `Link is Up - 100Mbps/Full`, which is not
+     trustworthy with no real PHY chip answering on the bus — likely a
+     floating-MDIO-line artifact, not a real link. Needs re-verification
+     once the carrier board is physically attached, before ETH-01..
+     ETH-05 (work order §11) can be considered satisfied.
 
 ## Hardware bring-up status
 
 Owner-driven bring-up on real hardware is underway (not yet complete).
 Confirmed so far, via live UART console debugging with the owner:
 - **CON-01/CON-02 (UART0 carrier console): RESOLVED**, see item 6 above.
-- **ETH (Ethernet): root-caused and fixed in the overlay, not yet
-  re-verified on hardware**, see item 9 above.
+- **ETH (Ethernet) MDIO0/PIN88 pinmux conflict: RESOLVED, confirmed on
+  hardware.** RGMII TX delay warning also fixed, not yet re-verified.
+  Real PHY link status still unverified (carrier board not yet
+  attached). See item 9 above.
 
 Every other item in work order §11's validation matrix (CAN-01..CAN-05,
 remaining ETH items, etc.) has not been attempted yet — see
