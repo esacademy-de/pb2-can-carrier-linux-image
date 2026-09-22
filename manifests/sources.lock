@@ -33,6 +33,17 @@ tag = "v6.18.37"
 commit = "0c503cf3dde2e53614f05261ece12f9d3d4c3c20"
 rt_patch = "patch-6.18.37-rt6.patch.xz"
 rt_patch_url = "https://mirrors.edge.kernel.org/pub/linux/kernel/projects/rt/6.18/patch-6.18.37-rt6.patch.xz"
+#
+# CONFIRMED BY REAL BUILD ATTEMPT: pinning 6.18.37 also breaks one entry
+# in the recipe's own K3 patch series -- its "imagination" backport
+# (Imagination PowerVR GPU driver, backported from v6.19.14) fails to
+# `git am` cleanly against 6.18.37. That backport targets AM62A/AM68A/
+# J721S2 (boards with a PowerVR GPU); AM625/PocketBeagle 2 has no such
+# GPU, so scripts/build-image.sh skips just that one patch.sh entry
+# (commented out, with the reasoning recorded inline) rather than
+# reverting to 6.18.52 and losing PREEMPT_RT. Every other entry in the
+# recipe's patch series (TI K3 support, rpi-backports, uio) applies
+# cleanly at 6.18.37.
 
 [uboot]
 repo = "https://github.com/beagleboard/u-boot.git"

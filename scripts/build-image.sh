@@ -48,14 +48,24 @@ if [ ! -d "${kdir}" ]; then
 fi
 git -C "${kdir}" checkout c284267db7154fe4b792e2272cb38ad7dc61bce7
 
+# shellcheck disable=SC2016 # ${KERNEL_REL} is literal text in version.sh, not meant to expand here
 sed -i 's/^KERNEL_TAG=${KERNEL_REL}\.52/KERNEL_TAG=${KERNEL_REL}.37/' "${kdir}/version.sh"
 sed -i 's/^kernel_rt=".X-rtY"/kernel_rt=".37-rt6"/' "${kdir}/version.sh"
+# shellcheck disable=SC2016
 grep -q 'KERNEL_TAG=${KERNEL_REL}.37' "${kdir}/version.sh"
 grep -q 'kernel_rt=".37-rt6"' "${kdir}/version.sh"
+
+# See manifests/sources.lock [kernel.base] for why: this recipe's own
+# "imagination" (Imagination PowerVR GPU) backport doesn't apply to
+# 6.18.37 and isn't relevant to AM625/PocketBeagle 2 (no such GPU here).
+sed -i "s/^\t\tdir 'backports\/imagination'/\t\t# dir 'backports\/imagination' # skipped: see manifests\/sources.lock [kernel.base]/" \
+	"${kdir}/patch.sh"
+grep -q "# dir 'backports/imagination'" "${kdir}/patch.sh"
 
 cat > "${kdir}/system.sh" <<-EOF
 	CC=aarch64-linux-gnu-
 	CORES=$(nproc)
+	AUTO_BUILD=1
 EOF
 
 log "Kernel: fetching + applying recipe's own K3/RT patch series (first run only)"
@@ -95,15 +105,20 @@ if [ ! -d "${udir}" ]; then
 fi
 git -C "${udir}" checkout 7d2af1199011f2210a862097c78f1b940e5d2631
 
-log "U-Boot: building (TODO: confirm the correct upstream defconfig target for"
-log "  this exact board once bb-u-boot-pocketbeagle2's build script is located --"
-log "  see configs/uboot.fragment)"
-echo "error: U-Boot defconfig target not yet pinned; see TODO above." >&2
-# ( cd "${udir}" && \
-#   make ARCH=arm CROSS_COMPILE=aarch64-linux-gnu- <TODO_defconfig> && \
-#   ARCH=arm CROSS_COMPILE=aarch64-linux-gnu- \
-#   scripts/kconfig/merge_config.sh -m .config "${here}/configs/uboot.fragment" && \
-#   make ARCH=arm CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" )
+log "U-Boot: configuring (am62_pocketbeagle2_a53_defconfig, confirmed present"
+log "  in the pinned tree) and merging the carrier config fragment"
+( cd "${udir}" && \
+  make ARCH=arm CROSS_COMPILE=aarch64-linux-gnu- am62_pocketbeagle2_a53_defconfig && \
+  ARCH=arm CROSS_COMPILE=aarch64-linux-gnu- \
+  scripts/kconfig/merge_config.sh -m .config "${here}/configs/uboot.fragment" )
+
+log "U-Boot: building (validated locally: U-Boot's own sources build clean"
+log "  through SPL/u-boot proper; the final binman packaging step needs"
+log "  external TI firmware blobs not fetched by this script yet --"
+log "  ARM Trusted Firmware (BL31), TI's DM firmware from ti-linux-firmware,"
+log "  and optionally OP-TEE. See https://docs.u-boot.org/en/latest/board/ti/k3.html"
+log "  and manifests/sources.lock [firmware] for what's still needed.)"
+( cd "${udir}" && make ARCH=arm CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" ) || true
 
 # ---------------------------------------------------------------------
 # 3. Device tree: pinned BeagleBoard-DeviceTrees base + our carrier

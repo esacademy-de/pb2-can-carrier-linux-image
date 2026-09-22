@@ -1,35 +1,47 @@
 # U-Boot config fragment for the PB2 CAN Carrier image.
 # Verify against the pinned U-Boot tree (manifests/sources.lock:
-# beagleboard/u-boot @ v2026.01-am62-pocketbeagle2) with
-# scripts/kconfig/merge_config.sh before first build.
+# beagleboard/u-boot @ v2026.01-am62-pocketbeagle2, commit
+# 7d2af1199011f2210a862097c78f1b940e5d2631) with scripts/kconfig/
+# merge_config.sh before first build.
 #
-# Boot flow (confirmed against beagleboard/image-builder
-# tools/hwpack/pocketbeagle2-swap.conf): PB2 images boot via U-Boot
-# distro_bootcmd + extlinux.conf, not the legacy uEnv.txt mechanism.
-# extlinux.conf's actual template (extlinux_firmware_file =
-# .../bb-u-boot-pocketbeagle2/microsd-extlinux-w-swap.conf) is produced by
-# image-builder's own u-boot packaging stage from the pinned
-# beagleboard/u-boot source -- "bb-u-boot-pocketbeagle2" is a build-local
-# package name in that pipeline, not a separate external repo (searched;
-# none found under that name). TODO: locate the exact template within
-# image-builder's u-boot packaging stage and confirm the FDTOVERLAYS/APPEND
-# lines below land in it. Requirement: UART0 pinmux + console output in
-# SPL/U-Boot at 115200 8N1 without disabling MAIN_UART6 hardware (work
-# order §7.1), and deterministic carrier overlay loading with a visible
-# boot failure if it is missing/fails to apply (work order §7.1, §12).
-
-CONFIG_CONS_INDEX=1
-CONFIG_BAUDRATE=115200
-CONFIG_OF_LIBFDT_OVERLAY=y
+# Real defconfigs confirmed present in the pinned tree (two-stage K3
+# boot: R5/SPL then A53/main U-Boot):
+#   configs/am62_pocketbeagle2_r5_defconfig
+#   configs/am62_pocketbeagle2_a53_defconfig
+#
+# Confirmed by actually configuring am62_pocketbeagle2_a53_defconfig
+# locally: this board uses CONFIG_DM_SERIAL=y with driver-model serial,
+# so console selection is DT-driven (via U-Boot's own copy of the board
+# device tree, arch/arm/dts/k3-am62-pocketbeagle2-u-boot.dtsi + its
+# synced dts/upstream base) -- CONFIG_CONS_INDEX does not apply to this
+# target and has been removed from this fragment. CONFIG_BAUDRATE=115200
+# and CONFIG_OF_LIBFDT_OVERLAY=y are already the defconfig default.
+#
+# TODO (not yet done): U-Boot's own device tree also defaults its
+# console to MAIN_UART6 (same as the Linux side before the carrier
+# overlay), same as the k3-am62-pocketbeagle2-u-boot.dtsi pattern used
+# for its other carrier-agnostic overrides in that file. That change is
+# SPL/U-Boot-stage only and is separate from the kernel-side carrier
+# overlay in dts/ -- it has not been written yet.
 CONFIG_OF_BOARD_FIXUP=y
 
 # ---------------------------------------------------------------------
-# extlinux.conf additions
+# Boot flow
 # ---------------------------------------------------------------------
-# Add to the extlinux.conf entry (or the microsd-extlinux template in
-# bb-u-boot-pocketbeagle2) so the carrier overlay loads on every boot and
-# a missing/failed overlay aborts the boot rather than silently booting
-# without carrier hardware (work order §7.1, §12):
+# Confirmed against beagleboard/image-builder
+# tools/hwpack/pocketbeagle2-swap.conf: PB2 images boot via U-Boot
+# distro_bootcmd + extlinux.conf, not the legacy uEnv.txt mechanism.
+# extlinux.conf's template path in that hwpack config
+# (.../bb-u-boot-pocketbeagle2/microsd-extlinux-w-swap.conf) is a
+# build-local package name inside image-builder's own u-boot packaging
+# stage (built from this same pinned beagleboard/u-boot source), not a
+# separate external repo -- searched, none found under that name. TODO:
+# locate the exact template within image-builder's packaging stage and
+# confirm the FDTOVERLAYS/APPEND lines below land in it.
+#
+# Add to that extlinux.conf entry so the carrier overlay loads on every
+# boot and a missing/failed overlay aborts the boot rather than silently
+# booting without carrier hardware (work order §7.1, §12):
 #
 #   FDTOVERLAYS /boot/dtbs/${uname_r}/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo
 #
