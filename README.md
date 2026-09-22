@@ -11,14 +11,15 @@ recorded in that document's §2.
 ## Status
 
 See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the current, honest state.
-Short version: sources are pinned, both required kernel patches are
-written and `git am`-verified against the pinned kernel commit, and the
-carrier device-tree overlay is written and verified end-to-end (compiles
-clean, applies clean with `fdtoverlay` onto the real base `.dtb`). U-Boot
-build and final Debian image assembly are not wired into
-`scripts/build-image.sh` yet, and no hardware validation (work order
-§11) has been run — this is a software/DT bring-up handoff, not a
-flashable release.
+Short version: a full kernel build (6.18.37 + PREEMPT_RT + the complete
+K3 patch series) succeeds locally; both required kernel patches apply on
+top of that fully-patched tree and compile clean; the carrier
+device-tree overlay compiles clean and applies with `fdtoverlay` onto
+the real base `.dtb`; U-Boot's own source builds clean with the real
+defconfig. What's not done yet: U-Boot's final firmware packaging
+(needs external TI blobs), final Debian rootfs assembly, and all
+hardware validation (work order §11) — this is a software/DT bring-up
+handoff, not a flashable release.
 
 ## Layout
 
