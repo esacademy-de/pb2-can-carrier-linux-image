@@ -1,5 +1,6 @@
 release/
 out/
+.build/
 *.img
 *.img.xz
 *.dtb

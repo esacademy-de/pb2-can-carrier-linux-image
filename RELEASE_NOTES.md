@@ -1,14 +1,18 @@
 # Release notes
 
-Status: the kernel patches and the carrier device-tree overlay are fully
-built and validated against real, pinned upstream sources — not just
-checked for syntax (see below). U-Boot's own source also builds clean.
-Final image assembly is actively being wired up by driving
-`beagleboard/image-builder` directly (see limitation #1) rather than
-re-deriving its U-Boot/TI-firmware packaging pipeline; that work is in
-progress and not yet validated end to end. No hardware validation (work
-order §11) has been run. This is a software/DT bring-up handoff, not yet
-a flashable release.
+Status: **a complete, flashable PB2 CAN Carrier microSD image has been
+built and produced**, end to end, on real infrastructure — not just the
+individual pieces validated in isolation. `scripts/assemble-image.sh`
+automates the full chain: our patched/configured kernel → packaged as a
+real `.deb` → installed into a real `beagleboard/image-builder` rootfs
+build (debootstrap + chroot, in place of BeagleBoard's stock kernel
+package) → turned into a real bootable `.img` by BeagleBoard's own
+`setup_sdcard.sh` (real, already-signed U-Boot/TI firmware included) →
+our carrier device-tree overlay and extlinux boot entry injected as a
+carrier-specific finalization step on top. See "What was verified, and
+how" below for exactly what that first run produced. No hardware
+validation (work order §11) has been run yet — that's the next and last
+remaining step, and it's yours to do.
 
 ## What was verified, and how
 
@@ -46,58 +50,82 @@ aarch64/arm cross toolchains), not just read/reasoned about:
 - **U-Boot**: configured with the real, confirmed defconfig
   (`am62_pocketbeagle2_a53_defconfig`) plus `configs/uboot.fragment`
   merged in, and built — U-Boot's own sources compile clean through
-  SPL/u-boot proper. The build only stops at the final `binman`
-  packaging step, which needs external TI firmware blobs this repo
-  doesn't fetch yet (see limitation #1).
+  SPL/u-boot proper (the from-source build stops at final `binman`
+  packaging, which needs TI-signed blobs — see limitation #1 for how
+  that's actually solved, without needing this from-source build at all).
+- **A complete, flashable `.img` was produced**: our kernel packaged as a
+  real `.deb`, installed into a real `beagleboard/image-builder`
+  debootstrap+chroot rootfs build via its `repo_external` mechanism
+  (confirmed in the resulting `dpkg-list.txt`: our
+  `linux-image-6.18.37-arm64-k3-r56` is there, BeagleBoard's stock
+  `bbb.io-kernel-6.18-k3` is not), turned into a bootable image with
+  BeagleBoard's own `setup_sdcard.sh --dtb pocketbeagle2-swap`, then our
+  carrier `.dtbo` and a new default extlinux boot entry injected by
+  mounting the image's boot partition directly. Every stock boot label
+  (including the TechLab cape ones) was left intact alongside it. See
+  `image-builder/README.md` for the real findings this uncovered
+  (BeagleBoard ships prebuilt, already-signed U-Boot firmware; the real
+  `fdtoverlays` syntax and boot-partition layout; the confirmed real
+  `ttyS2` console device for MAIN_UART6; a missing `tree` host dependency
+  in `image-builder`'s own `install_dependencies.sh`).
 
 ## Known limitations and open items
 
 Per work order §1.1 ("no unresolved pin, binding, or driver assumptions
 may be hidden"):
 
-1. **IN PROGRESS — U-Boot's final packaging and Debian image assembly
-   via `beagleboard/image-builder`.** U-Boot's own defconfig
-   (`am62_pocketbeagle2_a53_defconfig`) is confirmed and builds clean.
-   Chased the external-firmware chain as far as it stays carrier-generic:
-   - ARM Trusted Firmware's BL31 builds clean from source locally
-     (`ARM-software/arm-trusted-firmware` @ `v2.14`,
-     `PLAT=k3 TARGET_BOARD=lite SPD=opteed`).
-   - TI's DM firmware and SYSFW blobs are fetched from
-     `TexasInstruments/ti-linux-firmware` (prebuilt binaries under TI's
-     own license, not GPL/BSD like the rest of this repo).
-   - Beyond that, U-Boot's SPL/`tiboot3.bin` needs a *signed, combined*
-     sysfw+board-config image produced by a third tool
-     (`beagleboard/k3-image-gen`), which also needs to know whether this
-     specific PB2 unit is GP or HS-FS silicon (changes the signing path).
-     This whole chain (SYSFW + k3-image-gen + GP/HS signing) is identical
-     for *any* PocketBeagle 2 image, carrier or not.
-
-   That's exactly why we're now wiring in `beagleboard/image-builder`
-   directly instead of re-deriving TI's signing pipeline: it already
-   solves U-Boot packaging (as a prebuilt `bb-u-boot-pocketbeagle2` .deb
-   from BeagleBoard's own apt repo, `debian.beagleboard.org`) and Debian
-   rootfs assembly. Real, concrete finding from reading its actual
-   scripts (not assumed): BeagleBoard's production images don't compile
-   kernel/U-Boot from source at image-build time at all — they
+1. **RESOLVED — U-Boot's final packaging and Debian image assembly via
+   `beagleboard/image-builder`.** U-Boot's own defconfig
+   (`am62_pocketbeagle2_a53_defconfig`) builds clean from source, but
+   getting from there to a signed, bootable `tiboot3.bin`/`tispl.bin`
+   needs TI's SYSFW + `k3-image-gen` + GP-vs-HS signing — identical
+   plumbing for *any* PocketBeagle 2 image, carrier or not. Rather than
+   re-derive that, this repo now drives `beagleboard/image-builder`
+   directly (real, concrete finding: BeagleBoard's production images
    `apt-get install` prebuilt `.deb` packages into a debootstrapped
-   chroot. There is no supported "build kernel from source" mode.
+   chroot rather than compiling kernel/U-Boot from source at all — there
+   is no supported "build from source" mode).
 
-   Current approach, in progress and not yet validated end to end:
-   build our own carrier kernel `.deb` (via `make bindeb-pkg` on the
-   already-validated patched+configured kernel tree) and serve it as a
-   small local flat apt repo inside the chroot, added via
-   `image-builder`'s existing `repo_external` extension point, in place
-   of BeagleBoard's stock `bbb.io-kernel-6.18-k3`/`bbb.io-headers-6.18-k3`
-   packages. A custom image-builder config
-   (`configs/pb2-can-carrier-debian-trixie-iot.conf`) and a small hook
-   script (`scripts/pb2-carrier-local-repo.sh`, called from a one-line,
-   guarded addition to `RootStock-NG.sh` between its debootstrap and
-   chroot stages) have been written but not yet committed into this repo
-   or run to completion — the kernel `.deb` build and the first full
-   pipeline run are both still in flight. Carrier-specific finalization
-   (our `.dtbo` + the `FDTOVERLAYS`/console `APPEND` lines in
-   `extlinux.conf`) still needs a post-processing step on top of
-   `image-builder`'s output; not started.
+   `scripts/assemble-image.sh` automates the full chain and has been run
+   successfully end to end:
+   1. Packages the already-patched/configured kernel as a real `.deb`
+      (`make bindeb-pkg`).
+   2. Serves it as a small local flat apt repo inside
+      `beagleboard/image-builder`'s chroot, via its existing
+      `repo_external` extension point
+      (`image-builder/pb2-carrier-local-repo.sh`, hooked in by a 4-line
+      patch to `RootStock-NG.sh`,
+      `image-builder/rootstock-ng-carrier-hook.patch`), in place of the
+      stock `bbb.io-kernel-6.18-k3`/`bbb.io-headers-6.18-k3` packages.
+      Confirmed in the resulting rootfs's `dpkg-list.txt`: our kernel is
+      there, the stock one is not.
+   3. Runs the real `beagleboard/image-builder` pipeline
+      (`image-builder/pb2-can-carrier-debian-trixie-iot.conf`, a trimmed
+      copy of BeagleBoard's own IoT config) — real debootstrap + chroot,
+      under QEMU arm64 emulation.
+   4. Produces a real bootable `.img` with BeagleBoard's own
+      `setup_sdcard.sh --dtb pocketbeagle2-swap` — this pulls in the
+      **real, already TI-signed** `bb-u-boot-pocketbeagle2` firmware
+      (`tiboot3.bin`, `tispl.bin`, `u-boot.img`, `bl31.bin`), fully
+      solving the signing gap without touching `k3-image-gen` at all.
+   5. Mounts the image's FAT boot partition directly and injects the
+      carrier `.dtbo` plus a new default extlinux label with the
+      `fdtoverlays` line and console `append` arguments — every stock
+      boot label (including BeagleBoard's TechLab cape ones) is left
+      intact alongside it for fallback/debug.
+
+   See `image-builder/README.md` for the full real findings this
+   uncovered — including two corrections to earlier, unverified
+   assumptions in `configs/uboot.fragment` (the real `fdtoverlays` syntax
+   is lowercase and boot-partition-relative, not the uppercase
+   `FDTOVERLAYS`/`/boot/dtbs/<ver>/` path guessed earlier; MAIN_UART6's
+   real, shipped console device is confirmed `ttyS2`, not the `ttyS1`
+   reasoned from compiled-DTB node order) — and a missing `tree` host
+   dependency in `image-builder`'s own `install_dependencies.sh` that
+   caused the first run to fail one step from the end (recovered without
+   redoing the ~1 hour of debootstrap+chroot work by completing the
+   remaining tail manually, then fixed properly in
+   `scripts/assemble-image.sh` for future runs).
 
 2. **One kernel recipe patch is deliberately skipped.** The recipe's
    own "imagination" backport (Imagination PowerVR GPU driver, from
@@ -145,22 +173,27 @@ may be hidden"):
    `reset-assert-us = <1000>` / `reset-deassert-us = <1000>` both carry
    a >5x safety margin over those figures.
 
-6. **UART0 `console=ttySN` device name is still an unconfirmed guess —
-   and my original reasoning for it was wrong.** `configs/uboot.fragment`
-   previously derived the guess from the DT `serial7`/`serial2` aliases.
-   Checked the actual driver source (`drivers/tty/serial/8250/8250_omap.c`
-   and `8250_core.c` at linux-stable v6.18): neither calls
-   `of_alias_get_id()` — this platform's 8250 driver does **not** use DT
-   aliases to assign `/dev/ttySN` numbers at all. The real mechanism is
-   dynamic assignment in kernel probe order, which for two UART nodes
-   with no other probe-order dependencies most likely (not guaranteed)
-   follows the compiled DTB's node order — but that is still an inference
-   from driver behavior, not a fact I can assert without booting real
-   hardware. This is exactly the ambiguity work order §5.5 asks to test
-   and document rather than assume — do
-   that on first boot (`dmesg | grep ttyS`) before considering CON-01/
-   CON-02 satisfied. The `earlycon=` half of the cmdline is
-   address-based and does not have this problem.
+6. **PARTIALLY RESOLVED — UART0 `console=ttySN` device name.**
+   MAIN_UART6's real, shipped console device is now confirmed: `ttyS2` —
+   extracted directly from BeagleBoard's own real
+   `microsd-extlinux-w-swap.conf` (inside the `bb-u-boot-pocketbeagle2`
+   package), not reasoned or guessed. The carrier's own extlinux entry
+   (injected by `scripts/assemble-image.sh`) now uses that confirmed
+   value for the fallback console. UART0's number is still unconfirmed —
+   no stock reference enables it, so there's nothing real to extract it
+   from — and my original reasoning for guessing it (DT `serial7`/`serial2`
+   aliases) was wrong: the actual 8250-omap driver doesn't call
+   `of_alias_get_id()`, so `/dev/ttySN` assignment is dynamic probe-order,
+   not alias-based. The injected boot entry hedges instead of guessing
+   confidently: `console=ttyS0,115200n8 console=ttyS2,115200n8
+   earlycon=ns16550a,mmio32,0x02800000,115200n8` — tries `ttyS0` for
+   UART0, keeps the confirmed `ttyS2` (UART6) as a working fallback, and
+   the address-based `earlycon` shows very-early kernel messages on the
+   real UART0 hardware regardless of which `ttySN` it ends up as. This is
+   exactly the ambiguity work order §5.5 asks to test and document rather
+   than assume — confirm the real mapping via `dmesg | grep ttyS` on
+   first boot before considering CON-01/CON-02 satisfied, and correct the
+   `ttyS0` guess in the extlinux entry if it's wrong.
 
 7. **`manifests/sources.lock`** still has two open TODOs:
    `beagleboard/image-builder`'s exact build-time commit (currently

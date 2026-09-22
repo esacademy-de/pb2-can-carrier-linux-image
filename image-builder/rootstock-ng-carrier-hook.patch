@@ -1,0 +1,15 @@
+diff --git a/RootStock-NG.sh b/RootStock-NG.sh
+index 41a5e11..2b8a905 100755
+--- a/RootStock-NG.sh
++++ b/RootStock-NG.sh
+@@ -212,6 +212,10 @@ run_roostock_ng () {
+ 	/bin/bash -e "${OIB_DIR}/scripts/install_dependencies.sh" || { exit 1 ; }
+ 	echo 'Log: /bin/bash -e "${OIB_DIR}/scripts/debootstrap.sh"'
+ 	/bin/bash -e "${OIB_DIR}/scripts/debootstrap.sh" || { exit 1 ; }
++	if [ -f "${OIB_DIR}/scripts/pb2-carrier-local-repo.sh" ] ; then
++		echo 'Log: /bin/bash -e "${OIB_DIR}/scripts/pb2-carrier-local-repo.sh"'
++		/bin/bash -e "${OIB_DIR}/scripts/pb2-carrier-local-repo.sh" || { exit 1 ; }
++	fi
+ 	echo 'Log: /bin/bash -e "${OIB_DIR}/scripts/chroot.sh"'
+ 	/bin/bash -e "${OIB_DIR}/scripts/chroot.sh" || { exit 1 ; }
+ 	sudo rm -rf ${tempdir}/ || true

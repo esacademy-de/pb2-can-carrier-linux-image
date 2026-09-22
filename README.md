@@ -11,21 +11,19 @@ recorded in that document's §2.
 ## Status
 
 See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the current, honest state.
-Short version: a full kernel build (6.18.37 + PREEMPT_RT + the complete
-K3 patch series) succeeds locally; both required kernel patches apply on
-top of that fully-patched tree and compile clean; the carrier
-device-tree overlay compiles clean and applies with `fdtoverlay` onto
-the real base `.dtb`; U-Boot's own source builds clean with the real
-defconfig; the main_spi0/GPIO1_17 pinmux conflict found in review is
-fixed and verified. Final image assembly is in progress: driving
-`beagleboard/image-builder` directly (it installs prebuilt kernel/U-Boot
-`.deb` packages rather than building from source, so the plan is to feed
-it our own carrier kernel package via its `repo_external` mechanism)
-rather than re-deriving U-Boot's TI-firmware signing pipeline ourselves.
-Not yet done: finishing that pipeline run, the carrier `.dtbo`/extlinux
-post-processing step on top of it, and all hardware validation (work
-order §11) — this is a software/DT bring-up handoff, not yet a flashable
-release.
+Short version: **`scripts/assemble-image.sh` has produced a real,
+complete, flashable microSD `.img`** — our patched/configured kernel,
+packaged as a `.deb` and installed into a real `beagleboard/image-builder`
+debootstrap+chroot build in place of BeagleBoard's stock kernel package,
+turned into a bootable image with BeagleBoard's own (already TI-signed)
+U-Boot firmware via `setup_sdcard.sh`, with the carrier device-tree
+overlay and a new default extlinux boot entry injected on top. All the
+component-level validation that came before this still stands: both
+kernel patches compile clean against the fully-patched tree, the carrier
+overlay compiles clean and merges with `fdtoverlay`, and the
+main_spi0/GPIO1_17 pinmux conflict found in review is fixed. What's left:
+all hardware validation (work order §11) — that's the next and last
+step, and it's yours to do.
 
 ## Layout
 
@@ -38,10 +36,12 @@ patches/kernel/                     TCAN3413 binding/driver + M_CAN sequencing p
 dts/                                carrier device-tree overlay(s)
 dts/optional-spi-children/          composable SPI child-device overlays (not in base overlay)
 image/package-list.txt              rootfs package list
-scripts/build-image.sh              kernel + U-Boot + Debian image build entry point
+image-builder/                      beagleboard/image-builder integration (patch, config, hook script) + real findings
+scripts/build-image.sh              kernel + device-tree overlay build/validate entry point
+scripts/assemble-image.sh           full pipeline: kernel .deb -> image-builder -> flashable .img
 scripts/flash-and-verify.sh         microSD flash + hardware smoke test entry point (self-hosted runner)
 tests/                              automated validation scripts, one per §11 test ID
-release/                            generated: image, SHA256SUMS, build log (not committed)
+release/                            generated: image, SHA256SUMS (not committed -- multi-GB, see below)
 ```
 
 ## Build environment
@@ -68,12 +68,26 @@ release/                            generated: image, SHA256SUMS, build log (not
 ## Reproducing a build
 
 ```bash
-scripts/build-image.sh
+scripts/build-image.sh      # kernel + carrier overlay: build + validate
+scripts/assemble-image.sh   # -> flashable microSD .img (needs real sudo/root)
 ```
 
-Builds the kernel and the carrier device-tree overlay from the pinned
-sources in `manifests/sources.lock` (work order §3, §9.1) and validates
-both against the real, patched kernel tree. U-Boot's final firmware
-packaging and Debian rootfs assembly are not yet wired into this script
-— see [RELEASE_NOTES.md](RELEASE_NOTES.md) limitation #1 for the current
-plan (driving `beagleboard/image-builder` directly) and status.
+`build-image.sh` builds the kernel and the carrier device-tree overlay
+from the pinned sources in `manifests/sources.lock` (work order §3,
+§9.1) and validates both against the real, patched kernel tree.
+`assemble-image.sh` picks up from there and drives
+`beagleboard/image-builder` directly to produce a real, flashable
+`release/pocketbeagle2-*-4gb.img` — see
+[image-builder/README.md](image-builder/README.md) for exactly what that
+does and the real findings behind it, and
+[RELEASE_NOTES.md](RELEASE_NOTES.md) for current status. Needs a
+Debian/Ubuntu host (or WSL) with real `sudo`/root — it does loop-device
+and `chroot` operations under QEMU arm64 emulation, and the debootstrap
+stage alone can take significant time.
+
+Write `release/pocketbeagle2-*-4gb.img` to a microSD card with
+balenaEtcher, Raspberry Pi Imager, `dd`, or any other raw-image writer.
+Default login is `debian` / `temppwd` (root disabled) — override it
+without rebuilding by editing `sysconf.txt` on the FAT boot partition
+before first boot, or via BeagleBoard's own Imaging Utility. Document
+this properly before handing the image to anyone else.

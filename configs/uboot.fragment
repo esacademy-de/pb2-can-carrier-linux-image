@@ -17,67 +17,61 @@
 # target and has been removed from this fragment. CONFIG_BAUDRATE=115200
 # and CONFIG_OF_LIBFDT_OVERLAY=y are already the defconfig default.
 #
-# TODO (not yet done): U-Boot's own device tree also defaults its
-# console to MAIN_UART6 (same as the Linux side before the carrier
-# overlay), same as the k3-am62-pocketbeagle2-u-boot.dtsi pattern used
-# for its other carrier-agnostic overrides in that file. That change is
-# SPL/U-Boot-stage only and is separate from the kernel-side carrier
-# overlay in dts/ -- it has not been written yet.
+# STILL OPEN: scripts/assemble-image.sh currently uses BeagleBoard's own
+# real, already-signed, unmodified bb-u-boot-pocketbeagle2 firmware
+# package rather than a custom U-Boot build from this defconfig+fragment
+# (see image-builder/README.md and RELEASE_NOTES.md item 1) -- that
+# firmware's own SPL/U-Boot-stage console still defaults to MAIN_UART6,
+# same as the Linux side before the carrier overlay/extlinux entry take
+# over. Getting the very-earliest (pre-Linux, pre-extlinux) boot output
+# onto UART0 too would need a real custom-signed U-Boot build (this
+# defconfig + fragment + a stdout-path change in
+# k3-am62-pocketbeagle2-u-boot.dtsi, then through TI's SYSFW/
+# k3-image-gen signing) -- not done, and not blocking: the kernel/
+# extlinux-stage console (the operationally relevant one) is already on
+# UART0 per the "Boot flow" section below.
 CONFIG_OF_BOARD_FIXUP=y
 
 # ---------------------------------------------------------------------
-# Boot flow
+# Boot flow -- CONFIRMED by actually building and mounting a real image
+# (scripts/assemble-image.sh, see image-builder/README.md for the full
+# account). This whole section was corrected against ground truth after
+# extracting BeagleBoard's own real, shipped extlinux template
+# (bb-u-boot-pocketbeagle2's microsd-extlinux-w-swap.conf) instead of
+# guessing from a disabled example comment.
 # ---------------------------------------------------------------------
-# Confirmed against beagleboard/image-builder
-# tools/hwpack/pocketbeagle2-swap.conf: PB2 images boot via U-Boot
-# distro_bootcmd + extlinux.conf, not the legacy uEnv.txt mechanism.
-# extlinux.conf's template path in that hwpack config
-# (.../bb-u-boot-pocketbeagle2/microsd-extlinux-w-swap.conf) is a
-# build-local package name inside image-builder's own u-boot packaging
-# stage (built from this same pinned beagleboard/u-boot source), not a
-# separate external repo -- searched, none found under that name. TODO:
-# locate the exact template within image-builder's packaging stage and
-# confirm the FDTOVERLAYS/APPEND lines below land in it.
+# PB2 images boot via U-Boot distro_bootcmd + extlinux.conf (not the
+# legacy uEnv.txt mechanism), read from the FAT boot partition's
+# /extlinux/extlinux.conf. Real, confirmed syntax (lowercase, relative to
+# the boot-partition root -- NOT the uppercase FDTOVERLAYS /boot/dtbs/
+# path this fragment guessed earlier):
 #
-# Add to that extlinux.conf entry so the carrier overlay loads on every
-# boot and a missing/failed overlay aborts the boot rather than silently
-# booting without carrier hardware (work order §7.1, §12):
+#   fdtdir /
+#   fdtoverlays /overlays/k3-am62-pocketbeagle2-can-carrier.dtbo
 #
-#   FDTOVERLAYS /boot/dtbs/${uname_r}/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo
+# scripts/assemble-image.sh injects a new "PB2 CAN Carrier" label with
+# this line (set as the default) after setup_sdcard.sh produces the
+# image, alongside every stock label (kept intact for fallback/debug) --
+# it does not modify image-builder's own templates.
 #
-# U-Boot's distro-boot FDTOVERLAYS handling already aborts distro_bootcmd
-# with a visible error if a listed .dtbo is missing or fails to apply;
-# confirm that behavior against the pinned tree during bring-up (work
-# order §12: "A missing/failed overlay must be visible in boot logs and
-# treated as a release failure").
+# append kernel command line (work order §5.5), also injected by
+# scripts/assemble-image.sh:
 #
-# APPEND kernel command line (work order §5.5):
+#   console=ttyS0,115200n8 console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02800000,115200n8
 #
-#   earlycon=ns16550a,mmio32,0x02800000,115200n8 console=ttyS0,115200n8 console=ttyS1,115200n8
-#
-# earlycon address 0x02800000 is main_uart0's MMIO base (verified against
-# k3-am62-main.dtsi: `main_uart0: serial@2800000`) -- this half is
-# address-based and does not depend on enumeration order.
-#
-# The `console=ttySN` device names ARE enumeration-order-dependent.
-# CORRECTED reasoning: they are NOT DT-alias-based -- checked the real
-# driver source (drivers/tty/serial/8250/8250_omap.c and 8250_core.c at
-# linux-stable v6.18): neither calls of_alias_get_id(), so this platform's
-# 8250 driver does not use the serial0..serial7 DT aliases to assign
-# /dev/ttySN numbers. The actual mechanism is dynamic assignment in
-# kernel probe order. Of the UARTs enabled in the final merged tree, only
-# main_uart0 (serial@2800000) and main_uart6 (serial@2860000) actually
-# probe as ttyS devices (wkup_uart0/main_uart1 are status="reserved" for
-# DM firmware and won't). main_uart0 precedes main_uart6 in
-# k3-am62-main.dtsi's document/address order, so IF probe order follows
-# compiled DTB node order (the common case with no other deferred-probe
-# dependency forcing reordering), ttyS0=UART0 and ttyS1=UART6 is the most
-# likely mapping -- revised down from an earlier, wrongly-reasoned
-# ttyS7/ttyS2 guess. This is still an inference, not a fact: TODO confirm
-# the real /dev/ttySN mapping from `dmesg | grep ttyS` on first boot and
-# correct these two values before considering CON-01/CON-02 (work order
-# §11) satisfied -- this is exactly the ambiguity work order §5.5 calls
-# out ("document and test the exact kernel command line ... instead of
-# relying on incidental enumeration order"). The first `console=`
-# argument wins for /dev/console; list UART0 first since it is the
-# required primary.
+# - earlycon address 0x02800000 is main_uart0's MMIO base (verified
+#   against k3-am62-main.dtsi: `main_uart0: serial@2800000`) -- shows
+#   very-early kernel messages on the real UART0 hardware regardless of
+#   what /dev/ttySN it ends up as.
+# - ttyS2 for MAIN_UART6 is CONFIRMED, extracted directly from
+#   BeagleBoard's real shipped extlinux template -- not guessed.
+# - ttyS0 for UART0 is still a guess, hedged by listing ttyS2 second as a
+#   working fallback. The `/dev/ttySN` device names are enumeration-order
+#   dependent, and this platform's 8250-omap driver does not call
+#   of_alias_get_id() (checked the real driver source at linux-stable
+#   v6.18) -- so it does NOT use the serial0..serial7 DT aliases to
+#   assign numbers, ruling out that earlier line of reasoning. TODO:
+#   confirm the real mapping via `dmesg | grep ttyS` on first boot and
+#   correct the `ttyS0` guess in the injected extlinux entry if wrong,
+#   before considering CON-01/CON-02 (work order §11) satisfied. The
+#   first `console=` argument wins for /dev/console.
