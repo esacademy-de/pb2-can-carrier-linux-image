@@ -280,13 +280,39 @@
 			AM62X_IOPAD(0x01c0, PIN_INPUT, 7) /* (B13) SPI0_D0.GPIO1_18 -- ETH interrupt */
 		>;
 	};
+
+	/* Ethernet reset companion (work order Appendix A / §5.2): P2.29 is a
+	 * dual-ball position -- GPIO0_40 (M22, driven above) and GPIO1_17
+	 * (A14) are two different SoC balls physically tied to the same
+	 * header pin. A14 is also the stock main_spi0's SPI0_CLK; without
+	 * both disabling main_spi0 below AND parking this ball explicitly,
+	 * main_spi0's own pinctrl request would keep driving A14 as an
+	 * active SPI clock in direct electrical contention with GPIO0_40
+	 * driving the same header pin as a reset line. */
+	eth_reset_companion_park: eth-reset-companion-park-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x01bc, PIN_INPUT, 7) /* (A14) SPI0_CLK.GPIO1_17 */
+		>;
+	};
+};
+
+/* Freed for the Ethernet reset/interrupt lines above (work order Appendix
+ * A: GPIO1_17 companion of GPIO0_40 at P2.29, and GPIO1_18 used directly
+ * for the interrupt): main_spi0's own pinctrl claims ball A14 (SPI0_CLK)
+ * and ball B13 (SPI0_D0), the same balls/register offsets the carrier
+ * needs. Leaving main_spi0 enabled would contend with the carrier's own
+ * claim on B13 and drive A14 as an active clock against GPIO0_40 on the
+ * same physical header pin. No consumer of main_spi0 was found anywhere
+ * in the base PB2 DTS tree. */
+&main_spi0 {
+	status = "disabled";
 };
 
 &cpsw3g {
 	pinctrl-names = "default";
 	pinctrl-0 = <&main_rgmii2_pins_default &main_mdio0_pins_default
 		     &main_mdio0_companion_park &eth_reset_pins_default
-		     &eth_int_pins_default>;
+		     &eth_reset_companion_park &eth_int_pins_default>;
 	status = "okay";
 };
 

@@ -87,15 +87,21 @@ may be hidden"):
    completing successfully with every other K3/RT patch applied. See
    `manifests/sources.lock` [kernel.base].
 
-3. **Ethernet reset/interrupt pins overlap stock `main_spi0`.** Per work
-   order Appendix A, the Ethernet reset GPIO (GPIO1_17) and interrupt
-   GPIO (GPIO1_18) sit on the same SoC balls as `main_spi0`'s CLK and D0
-   lines. The base PB2 DTS enables `main_spi0` with no visible child
-   device/consumer, so this carrier overlay proceeds with the pin
-   assignments as the work order explicitly specifies them — but this
-   should be confirmed against the schematic/board owner before release,
-   since it's a real resource conflict the work order names a resolution
-   for without flagging the SPI0 side-effect explicitly.
+3. **RESOLVED — Ethernet reset/interrupt pins vs stock `main_spi0`.**
+   `main_spi0`'s own pinctrl claims ball A14 (SPI0_CLK, the companion of
+   GPIO0_40 at the dual-ball P2.29 position) and ball B13 (SPI0_D0, the
+   same ball the carrier claims directly as GPIO1_18 for the Ethernet
+   interrupt). Leaving `main_spi0` enabled meant it would keep driving
+   A14 as an active SPI clock in direct electrical contention with
+   GPIO0_40 on the same physical header pin, and would contend with the
+   carrier's own claim on B13 — a real bug, not just a documentation
+   gap, caught in review. Fixed: the overlay now explicitly disables
+   `main_spi0` and adds an explicit high-impedance park for GPIO1_17
+   (ball A14), matching the pattern already used for every other
+   dual-ball companion. No consumer of `main_spi0` was found anywhere in
+   the base PB2 DTS tree. Verified: the merged tree shows
+   `main_spi0`'s `status = "disabled"` and the new park group correctly
+   included in `cpsw3g`'s `pinctrl-0`.
 
 4. **`cpsw_port2` has no efuse-backed MAC address.** The pinned SoC
    device tree gives `cpsw_port1` a persistent MAC via

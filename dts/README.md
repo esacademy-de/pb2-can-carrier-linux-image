@@ -57,12 +57,15 @@ spidev node (work order §5.1, §7.2, §11 SPI-01).
 
 ## Known open items (see RELEASE_NOTES.md for the full list)
 
-- Ethernet reset (GPIO1_17/ball A14) and interrupt (GPIO1_18/ball B13)
-  reuse two of stock `main_spi0`'s four pins. No consumer of `main_spi0`
-  was found in the base DTS, but this should be confirmed against the
-  board owner/schematic before release.
 - `cpsw_port2` has no efuse-backed MAC address hookup (only port1 has
   one in the pinned SoC dtsi) — persistence relies on U-Boot's board
   fixup instead; needs bring-up confirmation (§11 ETH-04).
+
+`main_spi0` (stock, no consumer found in the base DTS) is explicitly
+disabled by this overlay: its pinctrl claimed ball A14 (companion of
+the Ethernet reset ball GPIO0_40 at the dual-ball P2.29 position) and
+ball B13 (the same ball the carrier claims directly as the Ethernet
+interrupt, GPIO1_18) — real electrical contention, not just a
+documentation gap. See RELEASE_NOTES.md item 3.
 - DP83867 `reset-assert-us`/`reset-deassert-us` are conservative
   placeholders pending a datasheet timing check.
