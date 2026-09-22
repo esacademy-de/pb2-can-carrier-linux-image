@@ -2,11 +2,13 @@
 
 Status: the kernel patches and the carrier device-tree overlay are fully
 built and validated against real, pinned upstream sources — not just
-checked for syntax (see below). U-Boot's own source also builds clean;
-it's blocked only on external TI firmware blobs. Final Debian rootfs
-assembly is not yet wired into `scripts/build-image.sh`, and no hardware
-validation (work order §11) has been run. This is a software/DT bring-up
-handoff, not a flashable release.
+checked for syntax (see below). U-Boot's own source also builds clean.
+Final image assembly is actively being wired up by driving
+`beagleboard/image-builder` directly (see limitation #1) rather than
+re-deriving its U-Boot/TI-firmware packaging pipeline; that work is in
+progress and not yet validated end to end. No hardware validation (work
+order §11) has been run. This is a software/DT bring-up handoff, not yet
+a flashable release.
 
 ## What was verified, and how
 
@@ -53,8 +55,8 @@ aarch64/arm cross toolchains), not just read/reasoned about:
 Per work order §1.1 ("no unresolved pin, binding, or driver assumptions
 may be hidden"):
 
-1. **U-Boot's final packaging and Debian image assembly are not
-   implemented yet.** U-Boot's own defconfig
+1. **IN PROGRESS — U-Boot's final packaging and Debian image assembly
+   via `beagleboard/image-builder`.** U-Boot's own defconfig
    (`am62_pocketbeagle2_a53_defconfig`) is confirmed and builds clean.
    Chased the external-firmware chain as far as it stays carrier-generic:
    - ARM Trusted Firmware's BL31 builds clean from source locally
@@ -67,16 +69,35 @@ may be hidden"):
      sysfw+board-config image produced by a third tool
      (`beagleboard/k3-image-gen`), which also needs to know whether this
      specific PB2 unit is GP or HS-FS silicon (changes the signing path).
-     Not attempted — this whole chain (SYSFW + k3-image-gen + GP/HS
-     signing) is identical for *any* PocketBeagle 2 image, carrier or
-     not, and is exactly the piece `beagleboard/image-builder`'s own
-     u-boot packaging stage already solves. See `manifests/sources.lock`
-     `[firmware]` for the full citation trail.
+     This whole chain (SYSFW + k3-image-gen + GP/HS signing) is identical
+     for *any* PocketBeagle 2 image, carrier or not.
 
-   Final Debian rootfs assembly is likewise delegated to
-   `beagleboard/image-builder`, not yet wired in. This is the largest
-   remaining piece of work, and it's generic K3/BeagleBoard plumbing
-   rather than anything specific to the CAN carrier.
+   That's exactly why we're now wiring in `beagleboard/image-builder`
+   directly instead of re-deriving TI's signing pipeline: it already
+   solves U-Boot packaging (as a prebuilt `bb-u-boot-pocketbeagle2` .deb
+   from BeagleBoard's own apt repo, `debian.beagleboard.org`) and Debian
+   rootfs assembly. Real, concrete finding from reading its actual
+   scripts (not assumed): BeagleBoard's production images don't compile
+   kernel/U-Boot from source at image-build time at all — they
+   `apt-get install` prebuilt `.deb` packages into a debootstrapped
+   chroot. There is no supported "build kernel from source" mode.
+
+   Current approach, in progress and not yet validated end to end:
+   build our own carrier kernel `.deb` (via `make bindeb-pkg` on the
+   already-validated patched+configured kernel tree) and serve it as a
+   small local flat apt repo inside the chroot, added via
+   `image-builder`'s existing `repo_external` extension point, in place
+   of BeagleBoard's stock `bbb.io-kernel-6.18-k3`/`bbb.io-headers-6.18-k3`
+   packages. A custom image-builder config
+   (`configs/pb2-can-carrier-debian-trixie-iot.conf`) and a small hook
+   script (`scripts/pb2-carrier-local-repo.sh`, called from a one-line,
+   guarded addition to `RootStock-NG.sh` between its debootstrap and
+   chroot stages) have been written but not yet committed into this repo
+   or run to completion — the kernel `.deb` build and the first full
+   pipeline run are both still in flight. Carrier-specific finalization
+   (our `.dtbo` + the `FDTOVERLAYS`/console `APPEND` lines in
+   `extlinux.conf`) still needs a post-processing step on top of
+   `image-builder`'s output; not started.
 
 2. **One kernel recipe patch is deliberately skipped.** The recipe's
    own "imagination" backport (Imagination PowerVR GPU driver, from

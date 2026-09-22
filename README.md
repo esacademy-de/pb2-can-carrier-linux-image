@@ -16,10 +16,16 @@ K3 patch series) succeeds locally; both required kernel patches apply on
 top of that fully-patched tree and compile clean; the carrier
 device-tree overlay compiles clean and applies with `fdtoverlay` onto
 the real base `.dtb`; U-Boot's own source builds clean with the real
-defconfig. What's not done yet: U-Boot's final firmware packaging
-(needs external TI blobs), final Debian rootfs assembly, and all
-hardware validation (work order §11) — this is a software/DT bring-up
-handoff, not a flashable release.
+defconfig; the main_spi0/GPIO1_17 pinmux conflict found in review is
+fixed and verified. Final image assembly is in progress: driving
+`beagleboard/image-builder` directly (it installs prebuilt kernel/U-Boot
+`.deb` packages rather than building from source, so the plan is to feed
+it our own carrier kernel package via its `repo_external` mechanism)
+rather than re-deriving U-Boot's TI-firmware signing pipeline ourselves.
+Not yet done: finishing that pipeline run, the carrier `.dtbo`/extlinux
+post-processing step on top of it, and all hardware validation (work
+order §11) — this is a software/DT bring-up handoff, not yet a flashable
+release.
 
 ## Layout
 
@@ -41,9 +47,15 @@ release/                            generated: image, SHA256SUMS, build log (not
 ## Build environment
 
 - **Cross-compile / static-analysis CI**: GitHub-hosted `ubuntu-latest`
-  runner ([.github/workflows/build.yml](.github/workflows/build.yml)). Builds
-  the kernel, U-Boot, and Debian image; runs `dtbs_check`, `dt_binding_check`,
-  dtc warnings, and shellcheck. No special hardware required.
+  runner ([.github/workflows/build.yml](.github/workflows/build.yml)). Runs
+  on every push: shellcheck, `git am`-validates both kernel patches against
+  the pinned kernel commit, and compiles + `fdtoverlay`-merges the carrier
+  device-tree overlay against the pinned base `.dtb`. Deliberately does
+  *not* build the full kernel Image/U-Boot/Debian image on every push (too
+  slow/heavy for the hosted runner's disk and time budget) — that full
+  build has been run and validated locally instead (see
+  [RELEASE_NOTES.md](RELEASE_NOTES.md)). No special hardware required for
+  this job.
 - **Hardware validation**: a self-hosted GitHub Actions runner attached to a
   bench machine with the PB2 + CAN carrier connected
   ([.github/workflows/hardware-validation.yml](.github/workflows/hardware-validation.yml)).
@@ -59,5 +71,9 @@ release/                            generated: image, SHA256SUMS, build log (not
 scripts/build-image.sh
 ```
 
-Once `manifests/sources.lock` is filled in, this pins every source revision
-per work order §3 and §9.1.
+Builds the kernel and the carrier device-tree overlay from the pinned
+sources in `manifests/sources.lock` (work order §3, §9.1) and validates
+both against the real, patched kernel tree. U-Boot's final firmware
+packaging and Debian rootfs assembly are not yet wired into this script
+— see [RELEASE_NOTES.md](RELEASE_NOTES.md) limitation #1 for the current
+plan (driving `beagleboard/image-builder` directly) and status.
