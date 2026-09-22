@@ -1,15 +1,58 @@
 # U-Boot config fragment for the PB2 CAN Carrier image.
-# TODO: verify against the pinned U-Boot/SPL tree (manifests/sources.lock)
-# before first build. Requirement: UART0 pinmux + console output in SPL/U-Boot
-# at 115200 8N1 without disabling MAIN_UART6 hardware (work order §7.1),
-# and deterministic carrier overlay loading with a visible failure on a
-# missing/failed overlay (work order §7.1, §12).
+# Verify against the pinned U-Boot tree (manifests/sources.lock:
+# beagleboard/u-boot @ v2026.01-am62-pocketbeagle2) with
+# scripts/kconfig/merge_config.sh before first build.
+#
+# Boot flow (confirmed against beagleboard/image-builder
+# tools/hwpack/pocketbeagle2-swap.conf): PB2 images boot via U-Boot
+# distro_bootcmd + extlinux.conf, not the legacy uEnv.txt mechanism.
+# extlinux.conf's actual template (extlinux_firmware_file =
+# .../bb-u-boot-pocketbeagle2/microsd-extlinux-w-swap.conf) is produced by
+# image-builder's own u-boot packaging stage from the pinned
+# beagleboard/u-boot source -- "bb-u-boot-pocketbeagle2" is a build-local
+# package name in that pipeline, not a separate external repo (searched;
+# none found under that name). TODO: locate the exact template within
+# image-builder's u-boot packaging stage and confirm the FDTOVERLAYS/APPEND
+# lines below land in it. Requirement: UART0 pinmux + console output in
+# SPL/U-Boot at 115200 8N1 without disabling MAIN_UART6 hardware (work
+# order §7.1), and deterministic carrier overlay loading with a visible
+# boot failure if it is missing/fails to apply (work order §7.1, §12).
 
 CONFIG_CONS_INDEX=1
 CONFIG_BAUDRATE=115200
 CONFIG_OF_LIBFDT_OVERLAY=y
 CONFIG_OF_BOARD_FIXUP=y
 
-# TODO: env vars / boot script changes to load the carrier overlay
-# (dts/k3-am62-pocketbeagle2-can-carrier.dtbo) on every boot, and to fail
-# the boot loudly if it is missing or fails to apply.
+# ---------------------------------------------------------------------
+# extlinux.conf additions
+# ---------------------------------------------------------------------
+# Add to the extlinux.conf entry (or the microsd-extlinux template in
+# bb-u-boot-pocketbeagle2) so the carrier overlay loads on every boot and
+# a missing/failed overlay aborts the boot rather than silently booting
+# without carrier hardware (work order §7.1, §12):
+#
+#   FDTOVERLAYS /boot/dtbs/${uname_r}/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo
+#
+# U-Boot's distro-boot FDTOVERLAYS handling already aborts distro_bootcmd
+# with a visible error if a listed .dtbo is missing or fails to apply;
+# confirm that behavior against the pinned tree during bring-up (work
+# order §12: "A missing/failed overlay must be visible in boot logs and
+# treated as a release failure").
+#
+# APPEND kernel command line (work order §5.5):
+#
+#   earlycon=ns16550a,mmio32,0x02800000,115200n8 console=ttyS7,115200n8 console=ttyS2,115200n8
+#
+# earlycon address 0x02800000 is main_uart0's MMIO base (verified against
+# k3-am62-main.dtsi: `main_uart0: serial@2800000`) -- this half is
+# address-based and does not depend on enumeration order.
+#
+# The `console=ttySN` device names ARE enumeration-order-dependent and are
+# only a best guess from the DT aliases (serial7 = main_uart0, serial2 =
+# main_uart6 in the stock PB2 DTS): TODO confirm the real /dev/ttySN
+# mapping from `dmesg | grep ttyS` on first boot and correct these two
+# values before considering CON-01/CON-02 (work order §11) satisfied --
+# this is exactly the ambiguity work order §5.5 calls out ("document and
+# test the exact kernel command line ... instead of relying on incidental
+# enumeration order"). The first `console=` argument wins for
+# /dev/console; list UART0 first since it is the required primary.

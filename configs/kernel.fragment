@@ -1,7 +1,18 @@
 # Kernel config fragment for the PB2 CAN Carrier image.
-# Merge onto the pinned 6.18-k3 defconfig with scripts/kconfig/merge_config.sh.
-# Requirements per work order §3.1 — TODO: verify exact symbol names against
-# the pinned 6.18-k3 tree before first build.
+# Merge onto the pinned 6.18.37 defconfig (manifests/sources.lock) with
+# scripts/kconfig/merge_config.sh, which is the authoritative check for
+# these symbol names -- it reports any that don't exist or got silently
+# dropped by a Kconfig dependency in the pinned tree.
+#
+# Verified directly against drivers/net/can/m_can/Kconfig,
+# drivers/phy/Kconfig, drivers/net/ethernet/ti/Kconfig, and
+# arch/arm64/Kconfig.platforms at linux-stable v6.18 (close enough to the
+# pinned v6.18.37 point release for Kconfig symbol names, which don't
+# churn at point-release granularity): CONFIG_ARCH_K3,
+# CONFIG_TI_K3_AM65_CPSW_NUSS, CONFIG_CAN_M_CAN(_PLATFORM),
+# CONFIG_PHY_CAN_TRANSCEIVER. The remaining symbols below are the
+# conventional TI K3/AM62 set from other BeagleBoard K3 kernel configs and
+# still need the same merge_config.sh confirmation.
 
 # --- PREEMPT_RT / high-resolution timers ---
 CONFIG_PREEMPT_RT=y
@@ -9,7 +20,6 @@ CONFIG_HIGH_RES_TIMERS=y
 
 # --- TI K3/AM62 platform ---
 CONFIG_ARCH_K3=y
-CONFIG_ARCH_K3_AM62_SOC=y
 CONFIG_PINCTRL_SINGLE=y
 CONFIG_GPIO_DAVINCI=y
 
@@ -35,7 +45,6 @@ CONFIG_CAN=y
 CONFIG_CAN_RAW=y
 CONFIG_CAN_DEV=y
 CONFIG_CAN_M_CAN=y
-CONFIG_CAN_M_CAN_TCAN4X5X=n
 CONFIG_CAN_M_CAN_PLATFORM=y
 
 # --- Generic PHY framework + generic CAN transceiver PHY (TCAN3413) ---

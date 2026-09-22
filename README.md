@@ -10,15 +10,21 @@ recorded in that document's §2.
 
 ## Status
 
-Scaffold stage. Directory layout, CI skeleton, and placeholder manifests are
-in place; the kernel patches, device-tree overlay, and build scripts are not
-yet implemented. See the TODO markers in each file under `patches/`, `dts/`,
-`configs/`, and `scripts/`.
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the current, honest state.
+Short version: sources are pinned, both required kernel patches are
+written and `git am`-verified against the pinned kernel commit, and the
+carrier device-tree overlay is written and verified end-to-end (compiles
+clean, applies clean with `fdtoverlay` onto the real base `.dtb`). U-Boot
+build and final Debian image assembly are not wired into
+`scripts/build-image.sh` yet, and no hardware validation (work order
+§11) has been run — this is a software/DT bring-up handoff, not a
+flashable release.
 
 ## Layout
 
 ```
-manifests/sources.lock              pinned repo/commit list (TODO: fill in)
+manifests/sources.lock              pinned repo/commit list
+RELEASE_NOTES.md                    current status + known limitations
 configs/kernel.fragment             kernel config fragment
 configs/uboot.fragment              U-Boot config fragment
 patches/kernel/                     TCAN3413 binding/driver + M_CAN sequencing patches

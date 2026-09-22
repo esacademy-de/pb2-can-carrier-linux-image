@@ -1,29 +1,78 @@
 # Pinned source revisions for the PB2 CAN Carrier Linux image.
 #
-# TODO: fill in exact commits/tags before the first real build (work order
-# §3, §9.1, §10 step 2). Every entry must be an immutable commit or tag —
-# never a moving branch (work order Appendix B, "Version discipline").
+# Every entry is an immutable commit — never a moving branch (work order
+# Appendix B, "Version discipline"). Verified reachable at the commit shown
+# as of 2026-09-22; re-verify with `git ls-remote` before a real build if
+# time has passed, since none of these are release-tagged upstream repos
+# that guarantee permanence.
 
-[beagleboard-debian-image-builder]
-repo = "TODO: https://github.com/beagleboard/beagleboard-image-builder"
-ref  = "TODO: pin exact commit/tag"
+[kernel]
+# BeagleBoard/RobertCNelson's kernel build-recipe repo (fetches and patches
+# linux-stable; not the kernel source itself -- see kernel.base below).
+repo = "https://github.com/RobertCNelson/arm64-multiplatform.git"
+branch = "v6.18.x-arm64-k3"
+commit = "c284267db7154fe4b792e2272cb38ad7dc61bce7"
 
-[linux-kernel]
-repo = "TODO: pin the 6.18-k3 tree used"
-ref  = "TODO: pin exact commit/tag"
-rt_patch = "TODO: record PREEMPT_RT patch provenance"
+[kernel.base]
+# What the recipe above actually builds: linux-stable at a specific point
+# release. version.sh in the recipe repo currently pins 6.18.52 with
+# PREEMPT_RT disabled (kernel_rt=".X-rtY", a literal unset placeholder).
+#
+# DEVIATION: this build overrides that to 6.18.37, because
+# https://mirrors.edge.kernel.org/pub/linux/kernel/projects/rt/6.18/ only
+# publishes an RT patch for 6.18.37 (patch-6.18.37-rt6.patch.xz) as of
+# 2026-09-22 -- no RT patch exists yet for 6.18.52, and RT patches are
+# point-release-specific (they do not apply cleanly to a later stable tag).
+# Work order D-05/§3 require PREEMPT_RT, so the base is pinned to whatever
+# point release the RT project has actually shipped a patch for, not to
+# the recipe's own newer default. See scripts/build-image.sh for the
+# override and release notes for the tradeoff (6.18.37 forgoes 15 point
+# releases of otherwise-applicable upstream stable fixes).
+repo = "https://github.com/gregkh/linux.git"
+tag = "v6.18.37"
+commit = "0c503cf3dde2e53614f05261ece12f9d3d4c3c20"
+rt_patch = "patch-6.18.37-rt6.patch.xz"
+rt_patch_url = "https://mirrors.edge.kernel.org/pub/linux/kernel/projects/rt/6.18/patch-6.18.37-rt6.patch.xz"
 
 [uboot]
-repo = "TODO: pin the PB2-supported U-Boot/SPL tree"
-ref  = "TODO: pin exact commit/tag"
+repo = "https://github.com/beagleboard/u-boot.git"
+branch = "v2026.01-am62-pocketbeagle2"
+commit = "7d2af1199011f2210a862097c78f1b940e5d2631"
+# No point-release tag exists on this repo for the current branch head
+# (only on the separate beagleboard/u-boot-pocketbeagle2 release mirror,
+# whose newest tag v2026.01-am62-pocketbeagle2-11.02.18 does not match this
+# commit) -- pinning the branch head commit directly is the correct,
+# immutable reference here.
 
 [device-tree]
-repo = "https://github.com/beagleboard/BeagleBoard-DeviceTrees"
-ref  = "TODO: pin exact commit/tag on the v6.18.x branch"
+repo = "https://github.com/beagleboard/BeagleBoard-DeviceTrees.git"
+branch = "v6.18.x"
+commit = "ee075f0804f41e7440ce579ac8d5552e3acac5c8"
 base_dts = "src/arm64/ti/k3-am62-pocketbeagle2.dts"
+pinmux_reference = "src/arm64/ti/k3-am62-pocketbeagle2-pinmux.dtsi"
+# NOTE: pinmux_reference's own header calls itself "our staging ground,
+# anything heading to mainline or rejected" -- it was used only to read
+# real header-pin-to-SoC-ball/offset mappings (which reflect the physical
+# PCB and are not in flux), not depended on by label from the carrier
+# overlay. All pin offsets/modes used in dts/*.dtso were additionally
+# cross-checked against linux-stable v6.18's own
+# arch/arm64/boot/dts/ti/k3-am625-sk-common.dtsi (RGMII2 + DP83867) and
+# k3-am625-sancloud-bbe-2.dts (SPI2), and validated end-to-end by compiling
+# the overlay against this exact base commit and applying it with
+# fdtoverlay (see dts/README.md).
 
-[debian-snapshot]
-repo = "TODO: record Debian snapshot/repository state used for the rootfs"
+[image-builder]
+repo = "https://github.com/beagleboard/image-builder.git"
+branch = "master"
+commit = "3ca3705ad2a84f693180da13676fc779f3bcf646"
+# TODO: re-pin to the exact commit used at build time; this repo has no
+# per-release tags, only a moving master branch with dated config files
+# (e.g. configs/bb.org-debian-trixie-iot-v6.18-k3-arm64.conf).
 
 [toolchain]
-cross_compiler = "TODO: record exact aarch64 cross-toolchain version"
+cross_compiler = "gcc-aarch64-linux-gnu (Debian/Ubuntu crossbuild-essential-arm64 package, GCC 13.3.0 as validated in this repo's CI and local WSL build environment)"
+
+[debian-snapshot]
+base_config = "configs/bb.org-debian-trixie-iot-v6.18-k3-arm64.conf (beagleboard/image-builder)"
+# TODO: pin the exact Debian snapshot.debian.org timestamp used for the
+# rootfs at build time, per work order §9.1.

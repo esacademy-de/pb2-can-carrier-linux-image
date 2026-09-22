@@ -1,0 +1,74 @@
+From b2dfe6647b589cce4a924f4f0c38b267407e0ba9 Mon Sep 17 00:00:00 2001
+From: esacademy-de <98397027+esacademy-de@users.noreply.github.com>
+Date: Tue, 22 Sep 2026 11:37:30 +0200
+Subject: [PATCH 1/2] phy: can-transceiver: add TI TCAN3413 support
+
+Model the TCAN3413 as a single-channel transceiver with an
+active-high STB control and no software-controlled enable pin,
+reusing tcan1042_drvdata since the STB-only behavior is identical.
+Add ti,tcan3413 to the generic CAN-transceiver PHY binding
+(ti,tcan104x-can.yaml) with a binding example.
+
+TODO: Signed-off-by -- add your name and email before submitting
+this patch upstream (DCO certification must come from a human
+author/maintainer, not be fabricated).
+---
+ .../devicetree/bindings/phy/ti,tcan104x-can.yaml      | 11 +++++++++++
+ drivers/phy/phy-can-transceiver.c                     |  8 ++++++++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/phy/ti,tcan104x-can.yaml b/Documentation/devicetree/bindings/phy/ti,tcan104x-can.yaml
+index 138923ffe..809d0b438 100644
+--- a/Documentation/devicetree/bindings/phy/ti,tcan104x-can.yaml
++++ b/Documentation/devicetree/bindings/phy/ti,tcan104x-can.yaml
+@@ -23,6 +23,7 @@ properties:
+       - enum:
+           - ti,tcan1042
+           - ti,tcan1043
++          - ti,tcan3413
+           - nxp,tjr1443
+ 
+   '#phy-cells':
+@@ -68,3 +69,13 @@ examples:
+       enable-gpios = <&main_gpio1 67 GPIO_ACTIVE_HIGH>;
+       mux-states = <&mux0 1>;
+     };
++  - |
++    #include <dt-bindings/gpio/gpio.h>
++
++    /* TCAN3413: STB only, no enable pin */
++    transceiver2: can-phy {
++      compatible = "ti,tcan3413";
++      #phy-cells = <0>;
++      max-bitrate = <8000000>;
++      standby-gpios = <&main_gpio0 56 GPIO_ACTIVE_HIGH>;
++    };
+diff --git a/drivers/phy/phy-can-transceiver.c b/drivers/phy/phy-can-transceiver.c
+index f59caff4b..e2db57d7b 100644
+--- a/drivers/phy/phy-can-transceiver.c
++++ b/drivers/phy/phy-can-transceiver.c
+@@ -76,6 +76,10 @@ static const struct can_transceiver_data tcan1043_drvdata = {
+ 	.flags = CAN_TRANSCEIVER_STB_PRESENT | CAN_TRANSCEIVER_EN_PRESENT,
+ };
+ 
++/*
++ * TCAN3413: single-channel transceiver with an active-high STB control
++ * and no software-controlled enable pin, so it shares tcan1042's drvdata.
++ */
+ static const struct of_device_id can_transceiver_phy_ids[] = {
+ 	{
+ 		.compatible = "ti,tcan1042",
+@@ -89,6 +93,10 @@ static const struct of_device_id can_transceiver_phy_ids[] = {
+ 		.compatible = "nxp,tjr1443",
+ 		.data = &tcan1043_drvdata
+ 	},
++	{
++		.compatible = "ti,tcan3413",
++		.data = &tcan1042_drvdata
++	},
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, can_transceiver_phy_ids);
+-- 
+2.43.0
+

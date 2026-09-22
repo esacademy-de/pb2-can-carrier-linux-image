@@ -1,7 +1,13 @@
 name: Build
 
-# Cross-compiles the kernel/U-Boot/image and runs static checks. Nothing in
-# this job needs the physical board — see hardware-validation.yml for that.
+# Cross-compiles and statically validates the carrier-specific pieces
+# (kernel patches, device-tree overlay, config fragments) against the
+# pinned sources in manifests/sources.lock. Nothing here needs the
+# physical board — see hardware-validation.yml for that. A full kernel
+# Image/U-Boot/rootfs build is deliberately not run on every push (it
+# would not fit the hosted runner's disk/time budget); this job proves
+# the patches apply and the overlay compiles + merges cleanly, which is
+# what actually changes on most commits.
 
 on:
   push:
@@ -26,35 +32,64 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            device-tree-compiler shellcheck python3-yaml python3-pip \
+            device-tree-compiler shellcheck python3-pip python3-venv \
             crossbuild-essential-arm64 bc bison flex libssl-dev \
             u-boot-tools
+          pip install --break-system-packages -q dtschema
 
       - name: Shellcheck build scripts
         run: shellcheck scripts/*.sh
 
-      - name: Syntax-check any device-tree overlays present
+      - name: Validate kernel patches against the pinned base commit
         run: |
-          shopt -s nullglob globstar
-          files=(dts/**/*.dtso)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "no .dtso files yet — skipping"
+          shopt -s nullglob
+          patches=(patches/kernel/*.patch)
+          if [ ${#patches[@]} -eq 0 ]; then
+            echo "no patches yet — skipping"
             exit 0
           fi
-          status=0
-          for f in "${files[@]}"; do
-            echo "::group::dtc -I dts -O dtb -W all -o /dev/null $f"
-            dtc -@ -I dts -O dtb -W all -o /dev/null "$f" || status=1
-            echo "::endgroup::"
-          done
-          exit $status
+          commit=$(sed -n '/^\[kernel\.base\]/,/^\[/{/^commit = /p}' manifests/sources.lock \
+            | head -1 | sed -E 's/^commit = "([0-9a-f]+)"/\1/')
+          repo=$(sed -n '/^\[kernel\.base\]/,/^\[/{/^repo = /p}' manifests/sources.lock \
+            | head -1 | sed -E 's/^repo = "(.*)"/\1/')
+          [ -n "$commit" ] && [ -n "$repo" ]
+          mkdir -p /tmp/kbase && cd /tmp/kbase
+          git init -q
+          git remote add origin "$repo"
+          git config core.sparseCheckout true
+          mkdir -p .git/info
+          printf '%s\n' \
+            'drivers/phy/phy-can-transceiver.c' \
+            'Documentation/devicetree/bindings/phy/ti,tcan104x-can.yaml' \
+            'drivers/net/can/m_can/m_can.c' \
+            > .git/info/sparse-checkout
+          git fetch --depth 1 origin "$commit"
+          git checkout FETCH_HEAD
+          git config user.name ci
+          git config user.email ci@localhost
+          git am "$GITHUB_WORKSPACE"/patches/kernel/*.patch
 
-      # TODO: once manifests/sources.lock is pinned and scripts/build-image.sh
-      # is implemented, add steps here to:
-      #   - clone pinned kernel/U-Boot/device-tree sources
-      #   - apply patches/kernel/*
-      #   - run dt_binding_check / dtbs_check against the modified bindings
-      #   - build the kernel, U-Boot, and Debian rootfs image
-      #   - checksum and upload the image as a build artifact (release/)
-      # Cache the kernel source tree / ccache / apt downloads with
-      # actions/cache to keep this fast within the free-tier minutes budget.
+      - name: Build and merge-check the carrier device-tree overlay
+        run: |
+          overlay=dts/k3-am62-pocketbeagle2-can-carrier.dtso
+          if [ ! -f "$overlay" ]; then
+            echo "no carrier overlay yet — skipping"
+            exit 0
+          fi
+          commit=$(sed -n '/^\[device-tree\]/,/^\[/{/^commit = /p}' manifests/sources.lock \
+            | head -1 | sed -E 's/^commit = "([0-9a-f]+)"/\1/')
+          [ -n "$commit" ]
+          git clone --branch v6.18.x https://github.com/beagleboard/BeagleBoard-DeviceTrees.git /tmp/dts-repo
+          git -C /tmp/dts-repo checkout "$commit"
+          cp "$overlay" /tmp/dts-repo/src/arm64/overlays/
+          make -C /tmp/dts-repo all_arm64
+          fdtoverlay \
+            -i /tmp/dts-repo/src/arm64/ti/k3-am62-pocketbeagle2.dtb \
+            -o /tmp/merged.dtb \
+            /tmp/dts-repo/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo
+
+      # TODO: once scripts/build-image.sh's U-Boot stage and rootfs assembly
+      # (delegated to beagleboard/image-builder) are wired in, add a
+      # separate, longer-running workflow (manual/scheduled, not on every
+      # push) that runs the full kernel Image + U-Boot + image build and
+      # uploads release/ as an artifact with checksums.

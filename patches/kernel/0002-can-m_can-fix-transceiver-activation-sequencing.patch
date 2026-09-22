@@ -1,0 +1,92 @@
+From 4f398fdbf262f70d5e5d040ddbf65cbbc71253b0 Mon Sep 17 00:00:00 2001
+From: esacademy-de <98397027+esacademy-de@users.noreply.github.com>
+Date: Tue, 22 Sep 2026 11:37:30 +0200
+Subject: [PATCH 2/2] can: m_can: fix transceiver activation sequencing
+
+The stock open()/close() flow powered the external transceiver on
+before m_can_start() configured and started the M_CAN core, which
+can expose the CAN bus while the controller's TX behavior is not
+yet guaranteed. On some transceivers (e.g. TCAN3413, active-high
+STB) that window lets the bus leave standby before the controller
+is ready to drive it.
+
+Reorder m_can_open() so phy_power_on() (transceiver standby
+deassert) happens only after m_can_start() has successfully put
+the controller in Normal Mode, wait out the transceiver's
+standby-to-normal transition time (30-50us), and only then start
+the TX queue. Unwind in reverse on every failure path: if
+phy_power_on() fails after a successful m_can_start(), stop the
+M_CAN core again before releasing IRQ/workqueue/NAPI/clock
+resources, and never call phy_power_off() for a phy that never
+successfully powered on.
+
+m_can_close() already stops the TX queue and the M_CAN core before
+asserting transceiver standby, so its order is unchanged.
+
+TODO: Signed-off-by -- add your name and email before submitting
+this patch upstream (DCO certification must come from a human
+author/maintainer, not be fabricated).
+---
+ drivers/net/can/m_can/m_can.c | 26 +++++++++++++++++++-------
+ 1 file changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/can/m_can/m_can.c b/drivers/net/can/m_can/m_can.c
+index ad4f577c1..8b720b687 100644
+--- a/drivers/net/can/m_can/m_can.c
++++ b/drivers/net/can/m_can/m_can.c
+@@ -2061,13 +2061,9 @@ static int m_can_open(struct net_device *dev)
+ 	struct m_can_classdev *cdev = netdev_priv(dev);
+ 	int err;
+ 
+-	err = phy_power_on(cdev->transceiver);
+-	if (err)
+-		return err;
+-
+ 	err = m_can_clk_start(cdev);
+ 	if (err)
+-		goto out_phy_power_off;
++		return err;
+ 
+ 	/* open the can device */
+ 	err = open_candev(dev);
+@@ -2113,10 +2109,28 @@ static int m_can_open(struct net_device *dev)
+ 	if (err)
+ 		goto exit_start_fail;
+ 
++	/*
++	 * Only now bring the external transceiver out of standby: the
++	 * M_CAN core is configured and already in Normal Mode, so it
++	 * will not drive an undefined bus state once the transceiver
++	 * becomes active. See m_can_close() for the mirrored teardown
++	 * order (stop M_CAN and the queue before re-asserting standby).
++	 */
++	err = phy_power_on(cdev->transceiver);
++	if (err) {
++		netdev_err(dev, "failed to power on can transceiver\n");
++		goto exit_transceiver_fail;
++	}
++
++	/* Wait out the transceiver's standby-to-normal transition time. */
++	usleep_range(30, 50);
++
+ 	netif_start_queue(dev);
+ 
+ 	return 0;
+ 
++exit_transceiver_fail:
++	m_can_stop(dev);
+ exit_start_fail:
+ 	if (cdev->is_peripheral || dev->irq)
+ 		free_irq(dev->irq, dev);
+@@ -2131,8 +2145,6 @@ out_wq_fail:
+ 	close_candev(dev);
+ exit_disable_clks:
+ 	m_can_clk_stop(cdev);
+-out_phy_power_off:
+-	phy_power_off(cdev->transceiver);
+ 	return err;
+ }
+ 
+-- 
+2.43.0
+

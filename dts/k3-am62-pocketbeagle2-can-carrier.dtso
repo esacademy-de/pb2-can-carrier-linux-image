@@ -1,0 +1,454 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * PocketBeagle 2 CAN Carrier baseboard, hardware V1.0 with the corrections
+ * recorded in PB2_CAN_Carrier_Linux_Image_Work_Order.typ §2.
+ *
+ * Based on the v6.18.x k3-am62-pocketbeagle2.dts (see manifests/sources.lock
+ * for the pinned commit). Pin offsets/modes verified against that pinned
+ * base plus its k3-am62-pocketbeagle2-pinmux.dtsi (header-pin/ball fallback
+ * reference) and against arch/arm64/boot/dts/ti/k3-am625-sk-common.dtsi and
+ * k3-am625-sancloud-bbe-2.dts (linux-stable v6.18) for the RGMII2 and SPI2
+ * function-mode confirmations respectively.
+ *
+ * Scope: 3x CAN-FD (TCAN3413 generic PHY + M_CAN), carrier UART0 console,
+ * Gigabit Ethernet (DP83867 on CPSW port 2), user LED, SPI2 controller
+ * only, and the 13-line J3 GPIO breakout. USB1 host and MAIN_UART6 need no
+ * changes here: the stock PB2 DTS already configures them as required.
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/net/ti-dp83867.h>
+#include "ti/k3-pinctrl.h"
+
+/*
+ * Carrier UART0 (J4/FT230X) is the complete primary console; MAIN_UART6
+ * stays enabled as the stock secondary console (work order D-06, §5.5).
+ * /chosen/stdout-path can't be set to a base-only label from a plugin
+ * overlay (dtc resolves stdout-path's label shorthand to a path STRING
+ * at compile time -- unlike a <&label> phandle cell, that can't be
+ * deferred through the overlay fixup mechanism to apply time). Console
+ * selection is therefore driven entirely by the U-Boot/kernel command
+ * line (earlycon + console=) in configs/uboot.fragment, which is also
+ * what work order §5.5 asks to test and document explicitly rather than
+ * rely on stdout-path/enumeration order.
+ */
+&{/chosen} {
+	overlays {
+		k3-am62-pocketbeagle2-can-carrier.kernel = __TIMESTAMP__;
+	};
+};
+
+/*
+ * ---------------------------------------------------------------------
+ * 1. CAN-FD transceiver PHYs (work order §5.3, §6.1)
+ *
+ * Each TCAN3413 is single-channel, STB-only (no software enable pin).
+ * standby-gpios is active-high: the generic phy driver requests it
+ * GPIOD_OUT_HIGH (standby) at probe time and only drives it low in
+ * can_transceiver_phy_power_on(), which m_can_open() now calls after
+ * the controller is started (see patches/kernel/0002-...).
+ * ---------------------------------------------------------------------
+ */
+&main_pmx0 {
+	can_a_pins_default: can-a-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x01d8, PIN_OUTPUT, 0) /* (C15) MCAN0_TX */
+			AM62X_IOPAD(0x01dc, PIN_INPUT, 0)  /* (E15) MCAN0_RX */
+			AM62X_IOPAD(0x00fc, PIN_OUTPUT, 7) /* (Y20) VOUT0_DE.GPIO0_62 -- CAN A STB */
+		>;
+	};
+
+	can_b_stb_pins_default: can-b-stb-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x00f0, PIN_OUTPUT, 7) /* (Y22) VOUT0_DATA14.GPIO0_59 -- CAN B STB */
+		>;
+	};
+
+	can_c_stb_pins_default: can-c-stb-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x00e4, PIN_OUTPUT, 7) /* (AA23) VOUT0_DATA11.GPIO0_56 -- CAN C STB */
+		>;
+	};
+
+	/* CAN C TX/RX vs main_i2c2 (work order §5.2): park the main_i2c2
+	 * companion balls (GPIO0_43/44) as bias-disabled inputs. */
+	can_c_i2c2_companion_park: can-c-i2c2-companion-park-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x00b0, PIN_INPUT, 7) /* (K22) GPMC0_CSn2.GPIO0_43 */
+			AM62X_IOPAD(0x00b4, PIN_INPUT, 7) /* (K24) GPMC0_CSn3.GPIO0_44 */
+		>;
+	};
+
+	/* CAN C STB companion (work order §5.2): park GPIO1_29. */
+	can_c_stb_companion_park: can-c-stb-companion-park-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x01ec, PIN_INPUT, 7) /* (A17) I2C1_SDA.GPIO1_29 */
+		>;
+	};
+};
+
+&mcu_pmx0 {
+	/* CAN B = MCU_MCAN1 (work order Appendix A: TX=P2.11, RX=P2.09) */
+	can_b_pins_default: can-b-default-pins {
+		pinctrl-single,pins = <
+			AM62X_MCU_IOPAD(0x003c, PIN_OUTPUT, 0) /* (E5) MCU_MCAN1_TX */
+			AM62X_MCU_IOPAD(0x0040, PIN_INPUT, 0)  /* (D4) MCU_MCAN1_RX */
+		>;
+	};
+
+	/* CAN C = MCU_MCAN0 (work order Appendix A: TX=P1.26, RX=P1.28) */
+	can_c_pins_default: can-c-default-pins {
+		pinctrl-single,pins = <
+			AM62X_MCU_IOPAD(0x0034, PIN_OUTPUT, 0) /* (D6) MCU_MCAN0_TX */
+			AM62X_MCU_IOPAD(0x0038, PIN_INPUT, 0)  /* (B3) MCU_MCAN0_RX */
+		>;
+	};
+};
+
+/*
+ * A bare `/ { newnode {...}; };` block at the top level of a /plugin/
+ * file is NOT auto-wrapped into a fragment by dtc: it compiles fine and
+ * gets a local phandle for in-file references, but fdtoverlay's runtime
+ * apply step only merges actual fragment/__overlay__ structures, so an
+ * un-wrapped node is silently dropped when the overlay is applied to a
+ * live base tree (verified empirically with fdtoverlay against the
+ * pinned base dtb: the node compiled cleanly but never appeared in the
+ * merged output). New standalone nodes must instead be merged in via an
+ * explicit path target, `&{/path}`, matching the &{/chosen} pattern
+ * BeagleBoard's own overlays already use for this same reason.
+ */
+&{/} {
+	can_a_phy: can-phy-a {
+		compatible = "ti,tcan3413";
+		#phy-cells = <0>;
+		max-bitrate = <8000000>;
+		standby-gpios = <&main_gpio0 62 GPIO_ACTIVE_HIGH>;
+	};
+
+	can_b_phy: can-phy-b {
+		compatible = "ti,tcan3413";
+		#phy-cells = <0>;
+		max-bitrate = <8000000>;
+		standby-gpios = <&main_gpio0 59 GPIO_ACTIVE_HIGH>;
+	};
+
+	can_c_phy: can-phy-c {
+		compatible = "ti,tcan3413";
+		#phy-cells = <0>;
+		max-bitrate = <8000000>;
+		standby-gpios = <&main_gpio0 56 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/* Merge into the stock /leds node (adds a child + extends pinctrl-0)
+ * rather than redeclaring it, so the stock USR LED 1-4 pin claim
+ * (&led_pins_default) is kept alongside the carrier LED's (work order
+ * §8: preserve stock PB2 onboard LEDs). */
+&{/leds} {
+	pinctrl-0 = <&led_pins_default &carrier_user_led_pins_default>;
+
+	carrier_user_led: led-carrier-user {
+		function = LED_FUNCTION_INDICATOR;
+		function-enumerator = <0>;
+		color = <LED_COLOR_ID_GREEN>;
+		gpios = <&main_gpio0 55 GPIO_ACTIVE_LOW>;
+		default-state = "off";
+		label = "carrier:user";
+	};
+};
+
+&main_mcan0 {
+	/* CAN A */
+	pinctrl-names = "default";
+	pinctrl-0 = <&can_a_pins_default>;
+	phys = <&can_a_phy>;
+	status = "okay";
+};
+
+&mcu_mcan1 {
+	/* CAN B */
+	pinctrl-names = "default";
+	pinctrl-0 = <&can_b_pins_default &can_b_stb_pins_default>;
+	phys = <&can_b_phy>;
+	status = "okay";
+};
+
+&mcu_mcan0 {
+	/* CAN C */
+	pinctrl-names = "default";
+	pinctrl-0 = <&can_c_pins_default &can_c_stb_pins_default
+		     &can_c_i2c2_companion_park &can_c_stb_companion_park>;
+	phys = <&can_c_phy>;
+	status = "okay";
+};
+
+/* CAN C vs main_i2c2 (work order §5.2): disable the stock main_i2c2 use
+ * of these same balls. Nothing on this carrier or the stock PB2 module
+ * depends on main_i2c2 at runtime. */
+&main_i2c2 {
+	status = "disabled";
+};
+
+/*
+ * ---------------------------------------------------------------------
+ * 2. User LED vs epwm2 (work order §4.4, §5.2)
+ * ---------------------------------------------------------------------
+ */
+&main_pmx0 {
+	carrier_user_led_pins_default: carrier-user-led-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x00e0, PIN_OUTPUT, 7) /* (V20) VOUT0_DATA10.GPIO0_55 */
+		>;
+	};
+
+	/* epwm2 companion park: ball B17 also carries EHRPWM2_A (epwm2,
+	 * mode 8) in the stock PB2 DTS; park it as GPIO1_28 input. */
+	epwm2_companion_park: epwm2-companion-park-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x01e8, PIN_INPUT, 7) /* (B17) I2C1_SCL.GPIO1_28 */
+		>;
+	};
+};
+
+&epwm2 {
+	status = "disabled";
+};
+
+&main_gpio1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&epwm2_companion_park>;
+};
+
+/*
+ * ---------------------------------------------------------------------
+ * 3. Gigabit Ethernet: DP83867 on CPSW port 2 (work order §4.3, §5.4)
+ *
+ * RGMII2 pin group and the phy-mode/ti,rx-internal-delay pairing verified
+ * against linux-stable v6.18 k3-am625-sk-common.dtsi, which uses the
+ * identical AM625 RGMII2 balls with phy-mode "rgmii-rxid" and
+ * DP83867_RGMIIDCTL_2_00_NS -- matching the decoded hardware straps in
+ * work order §4.3.1 (RX delay 2.0 ns, TX delay 0 ns, PHY TX delay left
+ * unprogrammed).
+ * ---------------------------------------------------------------------
+ */
+&main_pmx0 {
+	main_rgmii2_pins_default: main-rgmii2-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x0184, PIN_INPUT, 0)  /* (AE23) RGMII2_RD0 */
+			AM62X_IOPAD(0x0188, PIN_INPUT, 0)  /* (AB20) RGMII2_RD1 */
+			AM62X_IOPAD(0x018c, PIN_INPUT, 0)  /* (AC21) RGMII2_RD2 */
+			AM62X_IOPAD(0x0190, PIN_INPUT, 0)  /* (AE22) RGMII2_RD3 */
+			AM62X_IOPAD(0x0180, PIN_INPUT, 0)  /* (AD23) RGMII2_RXC */
+			AM62X_IOPAD(0x017c, PIN_INPUT, 0)  /* (AD22) RGMII2_RX_CTL */
+			AM62X_IOPAD(0x016c, PIN_OUTPUT, 0) /* (Y18) RGMII2_TD0 */
+			AM62X_IOPAD(0x0170, PIN_OUTPUT, 0) /* (AA18) RGMII2_TD1 */
+			AM62X_IOPAD(0x0174, PIN_OUTPUT, 0) /* (AD21) RGMII2_TD2 */
+			AM62X_IOPAD(0x0178, PIN_OUTPUT, 0) /* (AC20) RGMII2_TD3 */
+			AM62X_IOPAD(0x0168, PIN_OUTPUT, 0) /* (AE21) RGMII2_TXC */
+			AM62X_IOPAD(0x0164, PIN_OUTPUT, 0) /* (AA19) RGMII2_TX_CTL */
+		>;
+	};
+
+	main_mdio0_pins_default: main-mdio0-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x0160, PIN_OUTPUT, 0) /* (AD24) MDIO0_MDC */
+			AM62X_IOPAD(0x015c, PIN_INPUT, 0)  /* (AB22) MDIO0_MDIO */
+		>;
+	};
+
+	/* MDIO0 companions (work order Appendix A): park GPIO1_11/GPIO1_9. */
+	main_mdio0_companion_park: main-mdio0-companion-park-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x01a4, PIN_INPUT, 7) /* (B20) MCASP0_ACLKX.GPIO1_11 */
+			AM62X_IOPAD(0x019c, PIN_INPUT, 7) /* (B18) MCASP0_AXR1.GPIO1_9 */
+		>;
+	};
+
+	eth_reset_pins_default: eth-reset-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x00a4, PIN_OUTPUT, 7) /* (M22) GPMC0_DIR.GPIO0_40 -- ETH reset */
+		>;
+	};
+
+	eth_int_pins_default: eth-int-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x01c0, PIN_INPUT, 7) /* (B13) SPI0_D0.GPIO1_18 -- ETH interrupt */
+		>;
+	};
+};
+
+&cpsw3g {
+	pinctrl-names = "default";
+	pinctrl-0 = <&main_rgmii2_pins_default &main_mdio0_pins_default
+		     &main_mdio0_companion_park &eth_reset_pins_default
+		     &eth_int_pins_default>;
+	status = "okay";
+};
+
+&cpsw_port2 {
+	phy-mode = "rgmii-rxid";
+	phy-handle = <&cpsw3g_phy1>;
+	status = "okay";
+	/* mac-address left unset: this SoC's cpsw_port1 gets its MAC from
+	 * &cpsw_mac_syscon efuse offset 0x0 (see k3-am62-main.dtsi), but no
+	 * second efuse-backed MAC slot for port2 was found anywhere in the
+	 * pinned BeagleBoard-DeviceTrees tree -- inventing an offset here
+	 * would risk reading undefined efuse content. Persistence instead
+	 * relies on U-Boot's standard K3 board fixup, which derives a
+	 * stable eth1addr from the SoC's unique ID and patches it into this
+	 * port's local-mac-address at boot (see configs/uboot.fragment).
+	 * Validate against work order §11 ETH-04 (identical MAC across 5
+	 * cold boots) during bring-up. */
+};
+
+&cpsw3g_mdio {
+	/* Redundant with the base node (matches it exactly): makes this
+	 * fragment self-consistent so dtc's overlay checker doesn't fall
+	 * back to the root default #address-cells/#size-cells when
+	 * checking ethernet-phy@1's reg property out of base-dtb context. */
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	cpsw3g_phy1: ethernet-phy@1 {
+		reg = <1>;
+		ti,rx-internal-delay = <DP83867_RGMIIDCTL_2_00_NS>;
+		/* PHY TX delay intentionally left unprogrammed (work order
+		 * §4.3.1: decoded PHY TX delay strap = 0 ns; the AM62x MAC
+		 * side supplies TX timing per D-10). */
+		reset-gpios = <&main_gpio0 40 GPIO_ACTIVE_LOW>;
+		/* Conservative reset timing pending datasheet-timing
+		 * confirmation during hardware bring-up (work order
+		 * Appendix B DP83867 datasheet); DP83867 requires >=1ms
+		 * RESET_N assert and settles well within 5ms after
+		 * deassert. */
+		reset-assert-us = <1000>;
+		reset-deassert-us = <5000>;
+		interrupt-parent = <&main_gpio1>;
+		interrupts = <18 IRQ_TYPE_LEVEL_LOW>;
+	};
+};
+
+/*
+ * ---------------------------------------------------------------------
+ * 4. SPI2 controller only (work order §4.5, §5.1, §7.2)
+ *
+ * J1/J2 are parallel copies of the same bus/CS0; only the controller is
+ * enabled here. Child-device overlays live in dts/optional-spi-children/.
+ * Mode-0 SPI2 function confirmed against linux-stable v6.18
+ * k3-am625-sancloud-bbe-2.dts, which uses these identical AM625 balls.
+ * ---------------------------------------------------------------------
+ */
+&main_pmx0 {
+	main_spi2_pins_default: main-spi2-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x01ac, PIN_INPUT, 0) /* (E19) MCASP0_AFSR.SPI2_CS0 */
+			AM62X_IOPAD(0x01b0, PIN_INPUT, 0) /* (A20) MCASP0_ACLKR.SPI2_CLK */
+			AM62X_IOPAD(0x0194, PIN_INPUT, 0) /* (B19) MCASP0_AXR3.SPI2_D0 (MISO) */
+			AM62X_IOPAD(0x0198, PIN_INPUT, 0) /* (A19) MCASP0_AXR2.SPI2_D1 (MOSI) */
+		>;
+	};
+
+	/* SPI2 companions (work order §4.5 "park companion pad"). P1.08
+	 * (SPI2_CLK) has no listed dual-ball companion. */
+	main_spi2_companion_park: main-spi2-companion-park-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x0140, PIN_INPUT, 7) /* (AD18) RGMII1_TD3.GPIO0_78 -- P1.06 companion */
+			AM62X_IOPAD(0x01f0, PIN_INPUT, 7) /* (A18) EXT_REFCLK1.GPIO1_30 -- P1.10 companion */
+			AM62X_IOPAD(0x013c, PIN_INPUT, 7) /* (AE18) RGMII1_TD2.GPIO0_77 -- P1.12 companion */
+		>;
+	};
+};
+
+&main_spi2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&main_spi2_pins_default &main_spi2_companion_park>;
+	status = "okay";
+};
+
+/*
+ * ---------------------------------------------------------------------
+ * 5. J3 GPIO breakout: 13 unclaimed, bias-disabled inputs (work order
+ *    §4.6, §5.1). Line names follow work order's own example format
+ *    (J3_<pin>_GPIO<bank>_<n>). Every other index below is reproduced
+ *    unchanged from the stock k3-am62-pocketbeagle2-pinmux.dtsi so this
+ *    overlay does not clobber BeagleBoard's existing names -- gpio-
+ *    line-names is replaced wholesale on overlay apply, not merged.
+ * ---------------------------------------------------------------------
+ */
+&main_pmx0 {
+	j3_gpio_pins_default: j3-gpio-default-pins {
+		pinctrl-single,pins = <
+			AM62X_IOPAD(0x00b8, PIN_INPUT, 7) /* (U22) VOUT0_DATA0.GPIO0_45  -- J3.1 */
+			AM62X_IOPAD(0x00c0, PIN_INPUT, 7) /* (W25) VOUT0_DATA2.GPIO0_47  -- J3.3 */
+			AM62X_IOPAD(0x00bc, PIN_INPUT, 7) /* (V24) VOUT0_DATA1.GPIO0_46  -- J3.4 */
+			AM62X_IOPAD(0x00d8, PIN_INPUT, 7) /* (V21) VOUT0_DATA8.GPIO0_53  -- J3.5 */
+			AM62X_IOPAD(0x00c4, PIN_INPUT, 7) /* (W24) VOUT0_DATA3.GPIO0_48  -- J3.6 */
+			AM62X_IOPAD(0x0100, PIN_INPUT, 7) /* (AC25) VOUT0_VSYNC.GPIO0_63 -- J3.7 */
+			AM62X_IOPAD(0x00c8, PIN_INPUT, 7) /* (Y25) VOUT0_DATA4.GPIO0_49  -- J3.8 */
+			AM62X_IOPAD(0x00f8, PIN_INPUT, 7) /* (AB24) VOUT0_HSYNC.GPIO0_61 -- J3.9 */
+			AM62X_IOPAD(0x00d0, PIN_INPUT, 7) /* (Y23) VOUT0_DATA6.GPIO0_51  -- J3.10 */
+			AM62X_IOPAD(0x00e8, PIN_INPUT, 7) /* (AB25) VOUT0_DATA12.GPIO0_57 -- J3.11 */
+			AM62X_IOPAD(0x00ec, PIN_INPUT, 7) /* (AA24) VOUT0_DATA13.GPIO0_58 -- J3.12 */
+			AM62X_IOPAD(0x01b8, PIN_INPUT, 7) /* (C13) SPI0_CS1.GPIO1_16     -- J3.13 */
+			AM62X_IOPAD(0x00f4, PIN_INPUT, 7) /* (AA21) VOUT0_DATA15.GPIO0_60 -- J3.14 */
+		>;
+	};
+};
+
+&main_gpio0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&j3_gpio_pins_default>;
+	gpio-line-names = "", "", "",	/* 0-2 */
+			  "USR_LED_4", "USR_LED_3", "USR_LED_2",	/* 3-5 */
+			  "USR_LED_1", "", "",	/* 6-8 */
+			  "", "", "",	/* 9-11 */
+			  "", "", "",	/* 12-14 */
+			  "", "", "",	/* 15-17 */
+			  "", "", "",	/* 18-20 */
+			  "", "", "",	/* 21-23 */
+			  "", "", "",	/* 24-26 */
+			  "", "", "",	/* 27-29 */
+			  "", "", "",	/* 30-32 */
+			  "", "", "",	/* 33-35 */
+			  "P1.13/USB_ID", "", "",	/* 36-38 */
+			  "", "P2.29(M22)", "",	/* 39-41 */
+			  "", "P1.28/I2C1_SCL(K22)", "P1.26/I2C1_SDA(K24)",	/* 42-44 */
+			  "J3_01_GPIO0_45", "J3_04_GPIO0_46", "J3_03_GPIO0_47",	/* 45-47 */
+			  "J3_06_GPIO0_48", "J3_08_GPIO0_49", "P1.20",	/* 48-50 */
+			  "J3_10_GPIO0_51", "P2.33", "J3_05_GPIO0_53",	/* 51-53 */
+			  "P2.35/AIN5/MSPM0_SWCLK", "P1.36(V20)", "carrier:can-c-stb",	/* 54-56 */
+			  "J3_11_GPIO0_57", "J3_12_GPIO0_58", "carrier:can-b-stb",	/* 57-59 */
+			  "J3_14_GPIO0_60", "J3_09_GPIO0_61", "carrier:can-a-stb",	/* 60-62 */
+			  "J3_07_GPIO0_63", "P2.17", "",	/* 63-65 */
+			  "", "", "",	/* 66-68 */
+			  "", "", "",	/* 69-71 */
+			  "", "", "",	/* 72-74 */
+			  "", "", "P1.12(AE18)",	/* 75-77 */
+			  "P1.06(AD18)", "", "",	/* 78-80 */
+			  "", "", "",	/* 81-83 */
+			  "", "P2.03(AB22)", "P2.01(AD24)",	/* 84-86 */
+			  "P1.02(AA19)", "P1.35", "P1.04(Y18)",	/* 87-89 */
+			  "P2.31(AA18)", "P2.10";	/* 90-91 */
+	status = "okay";
+};
+
+&main_gpio1 {
+	gpio-line-names = "P2.19", "P1.19/AIN0", "P1.34",	/* 0-2 */
+			  "P1.27/AIN4", "P1.25/AIN3", "P1.23/AIN2",	/* 3-5 */
+			  "P1.21/AIN1", "P1.10(B19)", "P1.12(A19)",	/* 6-8 */
+			  "P2.03(B18)", "P1.02/AIN6(E18)", "P2.01(B20)",	/* 9-11 */
+			  "P1.04(D20)", "P1.06(E19)", "P1.08",	/* 12-14 */
+			  "P2.31(A13)", "J3_13_GPIO1_16", "carrier:eth-reset(GPIO1_17)",	/* 15-17 */
+			  "carrier:eth-int(GPIO1_18)", "P2.25", "P1.32",	/* 18-20 */
+			  "P1.30", "P2.09(A15)", "P2.11(B15)",	/* 21-23 */
+			  "P2.05(C15)", "P2.07(E15)", "",	/* 24-26 */
+			  "", "carrier:epwm2-park(GPIO1_28)", "P1.33(A17)",	/* 27-29 */
+			  "P1.10(A18)", "";	/* 30-31 */
+	status = "okay";
+};
