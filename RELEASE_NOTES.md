@@ -55,13 +55,28 @@ may be hidden"):
 
 1. **U-Boot's final packaging and Debian image assembly are not
    implemented yet.** U-Boot's own defconfig
-   (`am62_pocketbeagle2_a53_defconfig`) is confirmed and builds clean,
-   but the final `binman` packaging step needs external TI firmware
-   blobs not yet fetched by this repo: ARM Trusted Firmware (BL31), TI's
-   DM firmware from `ti-linux-firmware`, and optionally OP-TEE — see
-   https://docs.u-boot.org/en/latest/board/ti/k3.html. Final Debian
-   rootfs assembly is delegated to `beagleboard/image-builder`, not yet
-   wired in. This is the largest remaining piece of work.
+   (`am62_pocketbeagle2_a53_defconfig`) is confirmed and builds clean.
+   Chased the external-firmware chain as far as it stays carrier-generic:
+   - ARM Trusted Firmware's BL31 builds clean from source locally
+     (`ARM-software/arm-trusted-firmware` @ `v2.14`,
+     `PLAT=k3 TARGET_BOARD=lite SPD=opteed`).
+   - TI's DM firmware and SYSFW blobs are fetched from
+     `TexasInstruments/ti-linux-firmware` (prebuilt binaries under TI's
+     own license, not GPL/BSD like the rest of this repo).
+   - Beyond that, U-Boot's SPL/`tiboot3.bin` needs a *signed, combined*
+     sysfw+board-config image produced by a third tool
+     (`beagleboard/k3-image-gen`), which also needs to know whether this
+     specific PB2 unit is GP or HS-FS silicon (changes the signing path).
+     Not attempted — this whole chain (SYSFW + k3-image-gen + GP/HS
+     signing) is identical for *any* PocketBeagle 2 image, carrier or
+     not, and is exactly the piece `beagleboard/image-builder`'s own
+     u-boot packaging stage already solves. See `manifests/sources.lock`
+     `[firmware]` for the full citation trail.
+
+   Final Debian rootfs assembly is likewise delegated to
+   `beagleboard/image-builder`, not yet wired in. This is the largest
+   remaining piece of work, and it's generic K3/BeagleBoard plumbing
+   rather than anything specific to the CAN carrier.
 
 2. **One kernel recipe patch is deliberately skipped.** The recipe's
    own "imagination" backport (Imagination PowerVR GPU driver, from

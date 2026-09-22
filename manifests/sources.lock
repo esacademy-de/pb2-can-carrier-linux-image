@@ -72,6 +72,41 @@ pinmux_reference = "src/arm64/ti/k3-am62-pocketbeagle2-pinmux.dtsi"
 # the overlay against this exact base commit and applying it with
 # fdtoverlay (see dts/README.md).
 
+[firmware]
+# External TI blobs U-Boot's final binman packaging needs (see
+# RELEASE_NOTES.md limitation #1). Confirmed real, buildable/fetchable:
+#
+# ARM Trusted Firmware BL31 -- built locally from source, not a blob:
+#   repo: https://github.com/ARM-software/arm-trusted-firmware.git
+#   tag: v2.14
+#   build: make ARCH=aarch64 CROSS_COMPILE=aarch64-linux-gnu- PLAT=k3 \
+#          TARGET_BOARD=lite SPD=opteed
+#   output: build/k3/lite/release/bl31.bin -- confirmed builds clean.
+#
+# TI DM firmware + SYSFW -- prebuilt binary blobs, TI's own license (not
+# GPL/BSD like the rest of this repo):
+#   repo: https://github.com/TexasInstruments/ti-linux-firmware.git
+#   branch: ti-linux-firmware
+#   needed paths: ti-dm/am62xx/ipc_echo_testb_mcu1_0_release_strip.xer5f,
+#     ti-sysfw/ti-fs-firmware-am62x-{gp,hs-fs-enc}.bin (device-variant
+#     dependent -- TODO determine whether this PB2 unit is GP or HS-FS
+#     silicon; changes which sysfw blob and signing path apply)
+#
+# TODO NOT YET ATTEMPTED: even with the above, U-Boot's SPL/tiboot3.bin
+# still needs a *signed, combined* sysfw+board-config image, produced by
+# a THIRD tool (k3-image-gen -- BeagleBoard fork:
+# https://github.com/beagleboard/k3-image-gen), which combines the sysfw
+# blob with board-specific board-cfg/rm-cfg/pm-cfg YAML via:
+#   make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabihf- SOC=am62x \
+#     SBL=<r5-spl-build-output> SYSFW_PATH=<ti-sysfw-blob>
+# This whole chain (SYSFW + k3-image-gen + GP/HS signing) is identical
+# for any PocketBeagle 2 image, carrier or not -- it is exactly the piece
+# beagleboard/image-builder's own u-boot packaging stage already solves,
+# which is why work order §3 says to build on "the BeagleBoard Debian
+# image" rather than reinvent K3 secure-boot packaging here. Treated as
+# out of scope for this carrier-specific repo; wire in via image-builder
+# instead of re-deriving it.
+
 [image-builder]
 repo = "https://github.com/beagleboard/image-builder.git"
 branch = "master"
