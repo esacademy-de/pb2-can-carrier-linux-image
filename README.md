@@ -1,8 +1,8 @@
 # PB2 CAN Carrier — Linux Image
 
 Reproducible Debian/Linux BSP for the PocketBeagle 2 CAN Carrier baseboard
-(triple CAN‑FD, Gigabit Ethernet, USB host, carrier UART0 console, SPI2,
-J3 GPIO breakout).
+(triple CAN‑FD, Gigabit Ethernet, USB host, optional carrier UART0
+console, SPI2, J3 GPIO breakout).
 
 Implementation basis: `PB2_CAN_Carrier_Linux_Image_Work_Order.typ` (hardware
 project `trunk/Documents/`), KiCad project V1.0 plus the owner corrections
@@ -91,3 +91,12 @@ Default login is `debian` / `temppwd` (root disabled) — override it
 without rebuilding by editing `sysconf.txt` on the FAT boot partition
 before first boot, or via BeagleBoard's own Imaging Utility. Document
 this properly before handing the image to anyone else.
+
+**Console**: default is stock MAIN_UART6 (SPL, U-Boot, kernel, login),
+matching an unmodified PocketBeagle 2 (work order D-12). Carrier UART0
+(P1.30/P1.32) is fully implemented and confirmed working, but is a
+manual, reboot-time override — edit `console=ttyS2,115200n8` to
+`console=ttyS7,115200n8` in the "PB2 CAN Carrier" label's `append` line
+in `/extlinux/extlinux.conf` on the flashed boot partition (leave
+`earlycon=` unchanged). Never list both `ttyS2` and `ttyS7` as active
+consoles at once — see `configs/uboot.fragment` for why.

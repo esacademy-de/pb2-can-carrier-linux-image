@@ -26,16 +26,22 @@
 #include "ti/k3-pinctrl.h"
 
 /*
- * Carrier UART0 (J4/FT230X) is the complete primary console; MAIN_UART6
- * stays enabled as the stock secondary console (work order D-06, §5.5).
+ * MAIN_UART6 is the default, complete console (work order D-12,
+ * superseding the earlier D-06 decision to make carrier UART0 primary):
+ * a jumper-selectable debug breakout on J4 will let the FTDI target
+ * either MAIN_UART6 or carrier UART0, so the software default now
+ * matches a stock, unmodified PocketBeagle 2. This overlay still applies
+ * UART0's pinctrl unconditionally (see the Ethernet/UART0 pin group
+ * below), so the UART0 device always exists as a plain serial port --
+ * carrier UART0 as the active kernel console is a manual, reboot-time
+ * override via /extlinux/extlinux.conf (see configs/uboot.fragment),
+ * not a default set here or in the kernel command line.
  * /chosen/stdout-path can't be set to a base-only label from a plugin
  * overlay (dtc resolves stdout-path's label shorthand to a path STRING
  * at compile time -- unlike a <&label> phandle cell, that can't be
- * deferred through the overlay fixup mechanism to apply time). Console
- * selection is therefore driven entirely by the U-Boot/kernel command
- * line (earlycon + console=) in configs/uboot.fragment, which is also
- * what work order §5.5 asks to test and document explicitly rather than
- * rely on stdout-path/enumeration order.
+ * deferred through the overlay fixup mechanism to apply time), so
+ * console selection is driven entirely by the U-Boot/kernel command
+ * line (earlycon + console=) in configs/uboot.fragment regardless.
  */
 &{/chosen} {
 	overlays {

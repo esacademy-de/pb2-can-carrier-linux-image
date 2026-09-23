@@ -173,12 +173,23 @@ may be hidden"):
    `reset-assert-us = <1000>` / `reset-deassert-us = <1000>` both carry
    a >5x safety margin over those figures.
 
-6. **RESOLVED — UART0 primary console (CON-01/CON-02).** Confirmed
-   working end-to-end on real hardware. Final injected `append` line
-   (`scripts/assemble-image.sh`, `configs/uboot.fragment`):
-   `console=ttyS7,115200n8 earlycon=ns16550a,mmio32,0x02860000`.
-   Findings, all confirmed on real hardware via iterative UART bring-up
-   (owner-driven, live console captures on both UART6 and UART0):
+6. **RESOLVED — console selection (CON-01/CON-02), default reverted to
+   MAIN_UART6 (work order D-12, superseding the earlier D-06 UART0-primary
+   decision).** The carrier will add a jumper-selectable debug UART
+   breakout on J4 (MAIN_UART6 or carrier UART0 to the same FTDI), so the
+   software default now matches a stock, unmodified PocketBeagle 2:
+   `scripts/assemble-image.sh`/`configs/uboot.fragment` inject
+   `console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02860000` (MAIN_UART6)
+   as the default `append` line. Carrier UART0 is fully implemented and
+   confirmed working end-to-end on real hardware, but is now a **manual,
+   reboot-time override** — hand-edit `console=ttyS2,115200n8` to
+   `console=ttyS7,115200n8` in `/extlinux/extlinux.conf` on the
+   already-flashed image (see `configs/uboot.fragment` for the full
+   procedure). It is not a separate boot label or build-time image
+   variant. Findings below, all confirmed on real hardware via iterative
+   UART bring-up (owner-driven, live console captures on both UART6 and
+   UART0), remain exactly what the manual override needs to work
+   correctly:
    - **`ttyS7` is UART0's real `/dev/ttySN` name**, found via `dmesg |
      grep ttyS` — the original `ttyS0` guess was wrong. Confirmed: the
      8250-omap driver doesn't call `of_alias_get_id()`, so assignment is

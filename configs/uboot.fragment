@@ -17,19 +17,18 @@
 # target and has been removed from this fragment. CONFIG_BAUDRATE=115200
 # and CONFIG_OF_LIBFDT_OVERLAY=y are already the defconfig default.
 #
-# STILL OPEN: scripts/assemble-image.sh currently uses BeagleBoard's own
-# real, already-signed, unmodified bb-u-boot-pocketbeagle2 firmware
-# package rather than a custom U-Boot build from this defconfig+fragment
-# (see image-builder/README.md and RELEASE_NOTES.md item 1) -- that
-# firmware's own SPL/U-Boot-stage console still defaults to MAIN_UART6,
-# same as the Linux side before the carrier overlay/extlinux entry take
-# over. Getting the very-earliest (pre-Linux, pre-extlinux) boot output
-# onto UART0 too would need a real custom-signed U-Boot build (this
-# defconfig + fragment + a stdout-path change in
-# k3-am62-pocketbeagle2-u-boot.dtsi, then through TI's SYSFW/
-# k3-image-gen signing) -- not done, and not blocking: the kernel/
-# extlinux-stage console (the operationally relevant one) is already on
-# UART0 per the "Boot flow" section below.
+# Uses BeagleBoard's own real, already-signed, unmodified
+# bb-u-boot-pocketbeagle2 firmware package rather than a custom U-Boot
+# build from this defconfig+fragment (see image-builder/README.md and
+# RELEASE_NOTES.md item 1) -- that firmware's own SPL/U-Boot-stage
+# console defaults to MAIN_UART6, which is also this carrier's default
+# Linux-stage console (work order D-12/§5.5, superseding the earlier
+# D-06 UART0-primary decision). Getting SPL/U-Boot output onto UART0
+# too would need a real custom-signed U-Boot build (this defconfig +
+# fragment + a stdout-path change in k3-am62-pocketbeagle2-u-boot.dtsi,
+# then through TI's SYSFW/k3-image-gen signing) -- not done, and out of
+# scope now that UART0 is a manual, kernel-stage-only override rather
+# than the primary console.
 CONFIG_OF_BOARD_FIXUP=y
 
 # ---------------------------------------------------------------------
@@ -54,43 +53,61 @@ CONFIG_OF_BOARD_FIXUP=y
 # image, alongside every stock label (kept intact for fallback/debug) --
 # it does not modify image-builder's own templates.
 #
-# append kernel command line (work order §5.5), also injected by
+# append kernel command line (work order §5.5/D-12), also injected by
 # scripts/assemble-image.sh -- CONFIRMED on real hardware (see
 # RELEASE_NOTES.md item 6):
 #
+#   console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02860000
+#
+# This is the SAME default a stock, unmodified PocketBeagle 2 uses --
+# MAIN_UART6 (ttyS2) as the complete console, no carrier-specific
+# console override applied out of the box (work order D-12, superseding
+# the earlier D-06 decision to make carrier UART0 the default). The
+# carrier overlay still applies UART0's pinctrl unconditionally, so the
+# UART0 device always exists as a plain serial port; it's just not a
+# registered kernel console by default.
+#
+# MANUAL UART0 OVERRIDE. To switch the kernel-stage console to carrier
+# UART0 (P1.30/P1.32), hand-edit the "PB2 CAN Carrier" label's `append`
+# line in /extlinux/extlinux.conf on the already-flashed boot partition,
+# replacing `console=ttyS2,115200n8` with `console=ttyS7,115200n8` and
+# leaving `earlycon=` unchanged:
+#
 #   console=ttyS7,115200n8 earlycon=ns16550a,mmio32,0x02860000
 #
+# This is a reboot-time, hand-edited override -- not a separate boot
+# label or a build-time image variant. Findings behind these exact
+# values, confirmed on real hardware:
 # - ttyS7 is UART0's real /dev/ttySN name (confirmed via `dmesg | grep
 #   ttyS` on real hardware -- the earlier `ttyS0` guess was wrong; this
 #   platform's 8250-omap driver does not call of_alias_get_id(), so
 #   /dev/ttySN assignment is registration-order dependent, not DT-alias
 #   dependent).
-# - earlycon stays on UART6 (0x02860000), NOT UART0. UART0's peripheral
-#   clock is never enabled by the stock, unmodified bb-u-boot-pocketbeagle2
-#   firmware (which only drives MAIN_UART6), so pointing earlycon's raw
-#   MMIO access at UART0 before Linux's clock driver has run hangs the
-#   CPU outright (confirmed on real hardware -- total silence on both
-#   UARTs, no USB enumeration). earlycon on UART6 is safe because U-Boot
-#   already has that UART clocked and configured.
+# - earlycon must stay on UART6 (0x02860000) regardless of which
+#   console= is active. UART0's peripheral clock is never enabled by the
+#   stock, unmodified bb-u-boot-pocketbeagle2 firmware (which only
+#   drives MAIN_UART6), so pointing earlycon's raw MMIO access at UART0
+#   before Linux's clock driver has run hangs the CPU outright (confirmed
+#   on real hardware -- total silence on both UARTs, no USB enumeration).
+#   earlycon on UART6 is safe because U-Boot already has that UART
+#   clocked and configured.
 # - NO baud suffix on earlycon=. Stock BeagleBoard extlinux templates
 #   also omit it. Per the kernel's earlycon docs, omitting the baud means
 #   "inherit whatever U-Boot already configured" -- appending
 #   `,115200n8` makes earlycon actively reprogram the UART against an
 #   assumed reference clock, which produced garbled output (confirmed on
 #   real hardware).
-# - Only ONE console= argument (ttyS7), not two. Registering both ttyS7
-#   and ttyS2 as simultaneous kernel consoles was confirmed on real
-#   hardware to corrupt UART6's TTY output right at the ttyS7 driver
-#   handoff (`printk: legacy console [ttyS7] disabled/enabled`), even
-#   though the UART0 peripheral itself is fine in isolation (verified by
-#   writing test strings directly to /dev/ttyS7 with `stty`/`printf`
-#   while UART6 was still the sole console). Root cause not pinned down
-#   further than "dual active kernel consoles on this 8250 setup
-#   corrupts one of them during handoff" -- since the work order only
-#   needs one working carrier console, the fix is simply not to enable
-#   both. With ttyS7 alone, early boot messages (pre ~2.6s, before the
-#   8250 driver takes over from the earlycon boot console) are only
-#   visible on UART6's physical pin, not on UART0 -- a documented
-#   limitation, same class as the SPL/U-Boot-stage limitation below.
-# - The first `console=` argument wins for /dev/console; moot here since
-#   there is only one.
+# - Only ONE console= argument at a time -- never both ttyS7 and ttyS2
+#   simultaneously. Registering both as simultaneous kernel consoles was
+#   confirmed on real hardware to corrupt UART6's TTY output right at
+#   the ttyS7 driver handoff (`printk: legacy console [ttyS7]
+#   disabled/enabled`), even though the UART0 peripheral itself is fine
+#   in isolation (verified by writing test strings directly to
+#   /dev/ttyS7 with `stty`/`printf` while UART6 was still the sole
+#   console). Root cause not pinned down further than "dual active
+#   kernel consoles on this 8250 setup corrupts one of them during
+#   handoff" -- the fix is simply never to enable both. With ttyS7
+#   alone, early boot messages (pre ~2.6s, before the 8250 driver takes
+#   over from the earlycon boot console) are only visible on UART6's
+#   physical pin, not on UART0 -- a documented limitation, same class as
+#   the SPL/U-Boot-stage limitation above.
