@@ -139,15 +139,16 @@ CONFIG_OF_BOARD_FIXUP=y
 # systemd.show_status=no alone -- UART6 stayed completely free of
 # "[ OK ]"/interleaving artifacts across a full fresh boot.
 #
-# ttyS7 has NO login getty -- deliberately. A getty was tried there too
-# (sharing the wire with journald's forwarding), and reverted after
-# three escalating failures on real hardware:
+# ttyS7 ALSO has a login getty, at the same time as journald's
+# forwarding -- confirmed stable on real hardware, but it took three
+# rounds to get there:
 #  1. serial-getty@.service's stock TTYVHangup=yes performs a
 #     vhangup(2) as part of starting up, which severs journald's
 #     already-open TTYPath connection the moment the getty starts --
-#     UART0 goes silent for the rest of boot. Attempted fix:
+#     UART0 goes silent for the rest of boot. Fix:
 #     TTYVHangup=no via a serial-getty@ttyS7.service.d/override.conf
-#     drop-in.
+#     drop-in (kept, for ttyS7 only -- ttyS2's getty has no such
+#     conflict and keeps the stock TTYVHangup=yes).
 #  2. That exposed a second, independent bug: nothing configures
 #     ttyS7's baud rate before journald's own early writes (not a
 #     kernel console= target, so the kernel's console driver never
@@ -155,23 +156,29 @@ CONFIG_OF_BOARD_FIXUP=y
 #     journald: ~25s+ vs ~5-6s). A raw byte-level capture showed a long
 #     burst of garbage/NUL bytes until a manual `stty` command fixed
 #     it -- both the manual test and journald's subsequent writes then
-#     came through clean. Fixed independently of getty via an
-#     ExecStartPre= on systemd-journald.service itself
+#     came through clean. Fixed via an ExecStartPre= on
+#     systemd-journald.service itself
 #     (/etc/systemd/system/systemd-journald.service.d/
 #     pb2-carrier-ttyS7-baud.conf: `stty -F /dev/ttyS7 115200 raw
-#     -echo`), forcing the baud rate before journald's first write.
-#     This fix is kept -- it's the only thing that configures ttyS7's
-#     line settings now that there's no getty either.
-#  3. With both of those in place, agetty on ttyS7 (running with
-#     TTYVHangup=no) then failed to terminate cleanly on shutdown --
-#     reboot/poweroff stalled for ~25s waiting to "abandon session
-#     scope" before giving up. Not acceptable for an unattended
-#     deployment.
-# Resolved by removing the ttyS7 getty entirely rather than chasing a
-# fourth workaround -- ttyS7 is dedicated solely to journald's forwarded
-# stream, full session, nothing else ever contends for that tty. Login
-# when connected to UART0 is via the USB-C CDC-ACM gadget or SSH
-# instead. The baud-rate fix alone (with the since-reverted
-# TTYVHangup=no + getty still in place) was confirmed clean on real
-# hardware; the final configuration (getty removed) has not yet been
-# re-tested on real hardware.
+#     -echo opost onlcr`), forcing the baud rate (and restoring \n ->
+#     \r\n translation, which plain `raw` mode otherwise disables --
+#     also confirmed on real hardware, as a cascading/staircase display
+#     without it) before journald's first write.
+#  3. With both of those in place, reboot/poweroff appeared to stall
+#     permanently -- initially (and INCORRECTLY) attributed to
+#     TTYVHangup=no, leading to removing the ttyS7 getty entirely as a
+#     first response. Further investigation found the real cause was
+#     unrelated: bb-usb-gadgets.service hangs the DWC3 USB gadget driver
+#     whenever VBUS is present without a real host ever completing
+#     enumeration to unblock it -- confirmed independently of ttyS7/
+#     getty entirely (identical hang on stock, unmodified BeagleBoard
+#     images with no getty changes at all, and reproducing even when
+#     powered through the carrier board's own P1 power pins). Disabled
+#     by default in scripts/assemble-image.sh (see RELEASE_NOTES.md
+#     item 12 for the full story); re-enable manually
+#     (`systemctl enable --now bb-usb-gadgets.service`) if USB gadget
+#     mode is specifically needed with a real host attached.
+# With bb-usb-gadgets disabled, TTYVHangup=no + the ttyS7 getty was
+# re-tested and confirmed stable across multiple reboots and power
+# cycles on real hardware -- both journald's forwarded stream and the
+# login prompt work correctly on ttyS7 at the same time.

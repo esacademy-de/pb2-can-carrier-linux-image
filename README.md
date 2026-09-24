@@ -110,15 +110,15 @@ manual, reboot-time override — edit `console=ttyS2,115200n8` to
 in `/extlinux/extlinux.conf` on the flashed boot partition (leave
 `earlycon=` unchanged). Never list both `ttyS2` and `ttyS7` as active
 consoles at once — see `configs/uboot.fragment` for why. A login getty
-is enabled on `ttyS2` only. `ttyS7`/UART0 deliberately has **no getty**
-— it's dedicated exclusively to journald's forwarded output instead
-(kernel messages plus every systemd status event,
-`ForwardToConsole=yes`/`TTYPath=/dev/ttyS7`); login when connected to
-UART0 is via SSH, or the USB-C CDC-ACM gadget once manually enabled
-(see the USB gadget mode note above — disabled by default). (A getty was
-tried on `ttyS7` too, sharing the wire with journald's forwarding, but
-reverted after real-hardware failures — see `configs/uboot.fragment`
-for the full story.) In the default configuration, kernel log output
+is enabled on **both** `ttyS2` and `ttyS7`. `ttyS7`/UART0 additionally
+carries journald's forwarded output (kernel messages plus every
+systemd status event, `ForwardToConsole=yes`/`TTYPath=/dev/ttyS7`) at
+the same time — confirmed stable on real hardware across multiple
+reboots and power cycles, after working through three real issues
+(severed journald connection, baud-rate garbage, and an apparent
+reboot hang that turned out to be caused by `bb-usb-gadgets.service`,
+not the getty itself — see `configs/uboot.fragment` for the full
+story). In the default configuration, kernel log output
 (`dmesg`) stays on `ttyS2`/MAIN_UART6 only (`systemd.show_status=no`
 stops PID1's own status writer from also touching that console) — see
 `configs/uboot.fragment` for why they're split this way.
