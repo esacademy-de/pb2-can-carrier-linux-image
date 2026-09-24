@@ -471,6 +471,47 @@ may be hidden"):
         mean building an unprecedented combination (Zink + glamor) with
         no known prior success for any GPU. Not pursued.
 
+12. **CONFIRMED ON REAL HARDWARE, WORKAROUND ONLY (not a fix) —
+    `bb-usb-gadgets.service` hangs boot/reboot when VBUS is present
+    without a real USB host completing enumeration.** Discovered during
+    reboot-reliability debugging: on wall-adapter power (no PC on
+    USB-C), both cold boot and `sudo reboot` were unreliable —
+    sometimes hanging permanently, sometimes booting but never reaching
+    a login prompt. Confirmed **not** specific to this carrier image or
+    any of its changes: the identical failure occurs on stock,
+    unmodified BeagleBoard labels (`4: microSD (debug)`,
+    `5: microSD (default)`) with no carrier overlay/config involved at
+    all, and with a second, different wall power adapter. Confirmed
+    **never** occurs when powered via a PC's USB-C port. Root-caused via
+    a raw boot capture: the hang lands immediately after
+    `configfs-gadget.g_multi gadget.0: MAC 44:88:be:d4:c5:f1` — the
+    last message before the USB gadget's actual functions/UDC come up
+    — consistent with the DWC3 gadget driver's state machine stalling
+    when VBUS is asserted (a wall adapter powering through USB-C) but no
+    real host ever completes enumeration to unblock it (only a PC
+    provides that). **Confirmed fix (workaround)**: `sudo systemctl
+    disable --now bb-usb-gadgets.service` — with USB gadget mode
+    disabled, boot and reboot are now reliable on wall power in every
+    test since.
+    - **Not yet changed in this repo's shipped image default.**
+      `bb-usb-gadgets.service` (NCM network + CDC-ACM serial gadget over
+      USB-C) was an explicit, owner-confirmed requirement earlier in
+      this project — disabling it by default would silently drop a
+      required feature. This needs an owner decision: (a) leave it
+      enabled by default (current shipped state) and document the
+      wall-power caveat, since the *actual* target deployment powers
+      the PB2 from the carrier board's own circuitry, not USB-C, and may
+      never assert VBUS at all — this bug might be entirely moot once
+      that's the real power path and hasn't been tested yet; (b) disable
+      it by default and require an explicit opt-in (`systemctl enable
+      bb-usb-gadgets`) for anyone who does want USB gadget mode; or
+      (c) pursue a real root-cause fix (e.g. a host/VBUS-presence
+      timeout or check in `bb-start-usb-gadgets` before starting the
+      gadget, if BeagleBoard's own tooling doesn't already have one).
+      No kernel warning/oops accompanies the hang — it reads as a true
+      driver-level stall, not a crash, so `dmesg`-level evidence beyond
+      the last-message timestamp hasn't been gathered yet.
+
 ## Hardware bring-up status
 
 Owner-driven bring-up on real hardware is underway (not yet complete).
@@ -483,6 +524,13 @@ Confirmed so far, via live UART console debugging with the owner:
   bare PocketBeagle2 module (kernel/DT level only). The CAN carrier
   board with the actual DP83867 PHY has **not** been attached, so no
   real Ethernet link has been tested yet. See item 10 above.
+- **Boot/reboot reliability on wall power: root-caused, workaround
+  confirmed, shipped-image default not yet decided.** See item 12
+  above — `bb-usb-gadgets.service` hangs the USB gadget driver when
+  powered via a wall adapter through USB-C (no real host to complete
+  enumeration); disabling it fixes boot/reboot reliability. Pre-existing
+  on stock BeagleBoard images too, not introduced by this carrier's
+  changes.
 
 Every other item in work order §11's validation matrix (CAN-01..CAN-05,
 remaining ETH items, etc.) has not been attempted yet — see
