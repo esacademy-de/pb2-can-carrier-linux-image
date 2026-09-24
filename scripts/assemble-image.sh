@@ -210,6 +210,25 @@ printf '[Service]\nTTYVHangup=no\n' \
 	| sudo tee "${rmnt}/etc/systemd/system/serial-getty@ttyS7.service.d/override.conf" >/dev/null
 sudo cat "${rmnt}/etc/systemd/system/serial-getty@ttyS7.service.d/override.conf"
 
+# Nothing at the kernel level configures ttyS7's baud rate -- it's not a
+# kernel console= target (only ttyS2 is), so the kernel's own console
+# driver setup never touches it. Normally agetty is the only thing that
+# ever sets it to 115200, as part of serial-getty@ttyS7 starting up --
+# but that happens much later in boot (~25s+) than systemd-journald
+# (~5-6s), which starts writing to /dev/ttyS7 immediately per
+# TTYPath= above. Confirmed on real hardware: journald's early writes
+# came out as a long burst of garbage/NUL bytes on a 115200 listener
+# until something (in testing, a manual `stty` command) explicitly
+# configured the port -- after that, both the manual test and journald's
+# own subsequent writes came through clean. Force the baud rate via an
+# ExecStartPre on journald itself, so it's correct before journald's
+# first write, independent of getty timing.
+log "Forcing ttyS7 to 115200 8N1 before journald starts writing to it"
+sudo mkdir -p "${rmnt}/etc/systemd/system/systemd-journald.service.d"
+printf '[Service]\nExecStartPre=/usr/bin/stty -F /dev/ttyS7 115200 raw -echo\n' \
+	| sudo tee "${rmnt}/etc/systemd/system/systemd-journald.service.d/pb2-carrier-ttyS7-baud.conf" >/dev/null
+sudo cat "${rmnt}/etc/systemd/system/systemd-journald.service.d/pb2-carrier-ttyS7-baud.conf"
+
 sync
 sudo umount "${rmnt}"
 sudo losetup -d "${rloopdev}"
