@@ -221,27 +221,18 @@ may be hidden"):
      UART0. Same class of limitation as the SPL/U-Boot-stage console
      (item 1) — closing it fully would need the same custom-signed
      U-Boot build, not done for the same reasons.
-   - **Login getty on both UARTs, independent of `console=`.**
-     systemd's `getty-generator` only creates a login getty for whatever
-     tty is named in the kernel's `console=` argument — since only one of
+   - **Login getty on `ttyS2` (MAIN_UART6) only.** systemd's
+     `getty-generator` only creates a login getty for whatever tty is
+     named in the kernel's `console=` argument — since only one of
      `ttyS2`/`ttyS7` is ever in `console=` at a time (the exclusivity
-     rule above), the *other* UART would otherwise have no login prompt
-     at all, confirmed empirically: inspecting a built image's
-     `/etc/systemd/system/getty.target.wants/` showed only `tty1`'s
-     statically-enabled getty, nothing for either serial UART — the
-     non-default one's getty was genuinely absent, not just dynamically
-     generated and hidden from static inspection. A getty is just
-     `agetty` listening on a tty, unrelated to the kernel
-     printk-console-duplication bug, so statically enabling both is
-     safe. `scripts/assemble-image.sh` now mounts the rootfs partition as
-     a carrier-finalization step and symlinks both
-     `serial-getty@ttyS2.service` and `serial-getty@ttyS7.service` into
-     `getty.target.wants/` (`ln -sf
-     /usr/lib/systemd/system/serial-getty@.service ...`), so both UARTs
-     have a login prompt available regardless of which one is the active
-     kernel console. Verified against the real built image (mount,
-     create, list, remove, unmount cycle) — not yet re-verified on real
-     hardware with a fresh build.
+     rule above), a naive setup leaves the *other* UART with no login
+     prompt at all. A getty was tried on `ttyS7` too (statically
+     enabling `serial-getty@ttyS7.service` via
+     `/etc/systemd/system/getty.target.wants/`), but reverted — see item
+     7 below for why. `ttyS7`/UART0 is dedicated exclusively to
+     journald's forwarded output instead (full session, not just boot);
+     login on that side is available via the USB-C CDC-ACM gadget or
+     SSH instead.
 
 7. **RESOLVED (mechanism verified, not yet re-tested on hardware) —
    garbled console output and stray BEL bytes during boot, root-caused
@@ -272,17 +263,42 @@ may be hidden"):
      a second kernel `console=ttyS7` — confirmed above (item 6) to
      corrupt UART6 at the driver handoff. journald forwarding is a
      userspace-only mechanism, independent of kernel console
-     registration, so it carries none of that risk. Caveat: `ttyS7`
-     also carries a login getty (item 6), so journald's forwarded
-     writes and `agetty`'s own login-prompt text share that wire —
-     expected to be much lower-risk than the UART6 case (journald
-     writes whole lines at once; `agetty` is otherwise idle at
-     "login:"), but not yet proven collision-free on real hardware.
-     Verified: the `journald.conf.d` drop-in mechanism itself (via
-     `systemd-analyze --root=... cat-config`, confirming the drop-in is
-     correctly discovered and layered into the effective config) —
-     **the actual fix (`systemd.show_status=no` + the drop-in together)
-     has not yet been re-tested on real hardware.**
+     registration, so it carries none of that risk. **`systemd.show_status=no`
+     confirmed working on real hardware**: UART6 stayed completely free
+     of `[ OK ]`/interleaving artifacts across a full fresh boot.
+   - **`ttyS7` sharing a getty with journald's forwarding was tried and
+     reverted after three escalating failures on real hardware**, in
+     order: (1) `serial-getty@.service`'s stock `TTYVHangup=yes`
+     performs a `vhangup(2)` on the tty as part of starting up, which
+     severed journald's already-open `TTYPath` connection the moment
+     the getty started, going silent for the rest of boot — attempted
+     fix: `TTYVHangup=no` via a `serial-getty@ttyS7.service.d/override.conf`
+     drop-in. (2) That exposed a second, independent problem: nothing
+     configures `ttyS7`'s baud rate before journald's own early writes
+     (it isn't a kernel `console=` target, so the kernel's console
+     driver never touches it, and `agetty` normally would but starts far
+     later than journald) — a raw byte-level capture showed a long burst
+     of garbage/NUL bytes until a manual `stty` command fixed it, after
+     which both the manual test and journald's subsequent writes came
+     through clean — fixed independently of getty via an `ExecStartPre=`
+     on `systemd-journald.service` itself
+     (`/etc/systemd/system/systemd-journald.service.d/pb2-carrier-ttyS7-baud.conf`,
+     `stty -F /dev/ttyS7 115200 raw -echo`) forcing the baud rate before
+     journald's first write. (3) With both of those in place, `agetty`
+     on `ttyS7` (running with `TTYVHangup=no`) then failed to terminate
+     cleanly on shutdown — `reboot`/`poweroff` stalled for ~25s waiting
+     to "abandon session scope" before giving up, a real regression, not
+     acceptable for an unattended deployment. **Resolved by removing the
+     `ttyS7` getty entirely** (item 6) rather than chasing a fourth
+     getty-side workaround — `ttyS7` is now dedicated solely to
+     journald's forwarded stream, for the full session, with nothing
+     else ever contending for that tty. The baud-rate `ExecStartPre` fix
+     is kept and is now the sole thing that ever configures `ttyS7`'s
+     line settings. The baud-rate fix alone (with the now-reverted
+     `TTYVHangup=no` + getty still in place) was confirmed on real
+     hardware to produce clean UART0 output; **the final configuration
+     (getty removed entirely) has not yet been re-tested on real
+     hardware.**
    - **The "won't finish booting"/apparent hang with a passive capture
      script is not a bug.** At the very end of boot, `agetty` sends
      `ESC[6n` (a cursor-position query, part of standard terminal

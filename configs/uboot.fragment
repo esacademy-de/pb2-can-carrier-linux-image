@@ -135,9 +135,43 @@ CONFIG_OF_BOARD_FIXUP=y
 # done via a second kernel console=ttyS7 -- that was confirmed above to
 # corrupt UART6 at the ttyS7 driver handoff. journald forwarding is a
 # userspace-only mechanism, independent of kernel console registration,
-# so it carries none of that risk. Caveat: ttyS7 also carries a login
-# getty (scripts/assemble-image.sh), so journald's forwarded writes and
-# agetty's own login-prompt text share that wire -- expected to be much
-# lower-risk than the UART6 case (journald writes whole lines at once;
-# agetty is otherwise idle at "login:"), but not yet proven
-# collision-free on real hardware.
+# so it carries none of that risk. Confirmed on real hardware:
+# systemd.show_status=no alone -- UART6 stayed completely free of
+# "[ OK ]"/interleaving artifacts across a full fresh boot.
+#
+# ttyS7 has NO login getty -- deliberately. A getty was tried there too
+# (sharing the wire with journald's forwarding), and reverted after
+# three escalating failures on real hardware:
+#  1. serial-getty@.service's stock TTYVHangup=yes performs a
+#     vhangup(2) as part of starting up, which severs journald's
+#     already-open TTYPath connection the moment the getty starts --
+#     UART0 goes silent for the rest of boot. Attempted fix:
+#     TTYVHangup=no via a serial-getty@ttyS7.service.d/override.conf
+#     drop-in.
+#  2. That exposed a second, independent bug: nothing configures
+#     ttyS7's baud rate before journald's own early writes (not a
+#     kernel console= target, so the kernel's console driver never
+#     touches it, and agetty normally would but starts far later than
+#     journald: ~25s+ vs ~5-6s). A raw byte-level capture showed a long
+#     burst of garbage/NUL bytes until a manual `stty` command fixed
+#     it -- both the manual test and journald's subsequent writes then
+#     came through clean. Fixed independently of getty via an
+#     ExecStartPre= on systemd-journald.service itself
+#     (/etc/systemd/system/systemd-journald.service.d/
+#     pb2-carrier-ttyS7-baud.conf: `stty -F /dev/ttyS7 115200 raw
+#     -echo`), forcing the baud rate before journald's first write.
+#     This fix is kept -- it's the only thing that configures ttyS7's
+#     line settings now that there's no getty either.
+#  3. With both of those in place, agetty on ttyS7 (running with
+#     TTYVHangup=no) then failed to terminate cleanly on shutdown --
+#     reboot/poweroff stalled for ~25s waiting to "abandon session
+#     scope" before giving up. Not acceptable for an unattended
+#     deployment.
+# Resolved by removing the ttyS7 getty entirely rather than chasing a
+# fourth workaround -- ttyS7 is dedicated solely to journald's forwarded
+# stream, full session, nothing else ever contends for that tty. Login
+# when connected to UART0 is via the USB-C CDC-ACM gadget or SSH
+# instead. The baud-rate fix alone (with the since-reverted
+# TTYVHangup=no + getty still in place) was confirmed clean on real
+# hardware; the final configuration (getty removed) has not yet been
+# re-tested on real hardware.

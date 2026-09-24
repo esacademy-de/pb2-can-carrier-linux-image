@@ -146,32 +146,34 @@ sudo losetup -d "${loopdev}"
 rmdir "${mnt}"
 
 # ---------------------------------------------------------------------
-# 5b. Enable a login getty on BOTH MAIN_UART6 (ttyS2) and carrier UART0
-#     (ttyS7), unconditionally -- independent of which one is the
-#     active kernel console= at any given time.
+# 5b. Enable a login getty on MAIN_UART6 (ttyS2) only. Carrier UART0
+#     (ttyS7) does NOT get a getty -- it's dedicated exclusively to
+#     journald's forwarded output (see 5c below), full session, not just
+#     during boot.
 #
-#     systemd's own getty-generator only creates a getty for whatever
-#     tty is named in the kernel's console= argument at boot. Since only
-#     ONE of ttyS2/ttyS7 is ever in console= at a time (registering both
-#     as simultaneous KERNEL CONSOLES was confirmed on real hardware to
-#     corrupt one of them -- see the UART0/UART6 exclusivity note in
-#     configs/uboot.fragment), the OTHER tty would otherwise have no
-#     login prompt at all. A getty is just agetty listening on a tty --
-#     unrelated to that kernel printk-console-duplication bug -- so
-#     statically enabling both here is safe and does not reintroduce it;
-#     confirmed empirically: /etc/systemd/system/getty.target.wants/
-#     only had the console-driven getty (dynamically generated) and
-#     tty1's own statically-enabled getty -- the non-default UART's
-#     getty was genuinely absent, not just hidden.
+#     A getty on ttyS7 alongside journald's TTYPath was tried and
+#     reverted after three distinct, escalating failures on real
+#     hardware: (1) serial-getty@ttyS7's stock TTYVHangup=yes severs
+#     journald's already-open connection to the tty the moment the
+#     getty starts, going silent for the rest of boot; (2) disabling
+#     that (TTYVHangup=no) fixed (1) but exposed that nothing then
+#     configures ttyS7's baud rate before journald's early writes,
+#     producing a burst of garbage/NUL bytes (fixed separately in 5c
+#     below, independent of getty entirely); (3) TTYVHangup=no then
+#     caused agetty on ttyS7 to not terminate cleanly on shutdown,
+#     stalling reboot/poweroff for ~25s waiting to "abandon session
+#     scope" -- a real regression, not acceptable for an unattended
+#     deployment. Dedicating ttyS7 to journald only removes the
+#     conflict at its root instead of chasing further getty-side
+#     workarounds. Login stays available via ttyS2, the USB-C CDC-ACM
+#     gadget, and SSH.
 # ---------------------------------------------------------------------
-log "Enabling serial-getty on both ttyS2 (MAIN_UART6) and ttyS7 (carrier UART0)"
+log "Enabling serial-getty on ttyS2 (MAIN_UART6) only"
 rmnt="$(mktemp -d)"
 rloopdev="$(sudo losetup -P -f --show "${img}")"
 sudo mount "${rloopdev}p3" "${rmnt}"
-for tty in ttyS2 ttyS7; do
-	sudo ln -sf /usr/lib/systemd/system/serial-getty@.service \
-		"${rmnt}/etc/systemd/system/getty.target.wants/serial-getty@${tty}.service"
-done
+sudo ln -sf /usr/lib/systemd/system/serial-getty@.service \
+	"${rmnt}/etc/systemd/system/getty.target.wants/serial-getty@ttyS2.service"
 sudo ls -la "${rmnt}/etc/systemd/system/getty.target.wants/"
 
 # ---------------------------------------------------------------------
@@ -186,7 +188,8 @@ sudo ls -la "${rmnt}/etc/systemd/system/getty.target.wants/"
 #     above (which stops PID1's own direct status writer from touching
 #     /dev/console, i.e. ttyS2), UART6 becomes pure, uninterrupted
 #     kernel printk output, and UART0 gets journald's full stream
-#     (kernel messages + every systemd status event) instead.
+#     (kernel messages + every systemd status event) instead, for the
+#     entire session now that ttyS7 has no getty contending for it.
 # ---------------------------------------------------------------------
 log "Routing journald's forwarded console output to ttyS7 (carrier UART0) only"
 sudo mkdir -p "${rmnt}/etc/systemd/journald.conf.d"
@@ -194,35 +197,17 @@ printf '[Journal]\nForwardToConsole=yes\nTTYPath=/dev/ttyS7\n' \
 	| sudo tee "${rmnt}/etc/systemd/journald.conf.d/pb2-carrier-uart0-forward.conf" >/dev/null
 sudo cat "${rmnt}/etc/systemd/journald.conf.d/pb2-carrier-uart0-forward.conf"
 
-# serial-getty@.service's own TTYVHangup=yes performs a vhangup(2) on
-# the tty as part of starting up, which disconnects any process already
-# holding that device open -- including journald's own TTYPath
-# connection above, established earlier in boot (systemd-journald.service
-# starts well before getty.target). Confirmed on real hardware: without
-# this override, UART0 goes completely silent for the rest of boot the
-# moment serial-getty@ttyS7 starts, even though journald's forwarding
-# config is present and correct. Override it for the ttyS7 instance only
-# -- ttyS2's getty has no such conflict (nothing else uses ttyS2 as a
-# forwarding target), so it's left with the stock TTYVHangup=yes.
-log "Disabling TTYVHangup for serial-getty@ttyS7 (would sever journald's UART0 connection)"
-sudo mkdir -p "${rmnt}/etc/systemd/system/serial-getty@ttyS7.service.d"
-printf '[Service]\nTTYVHangup=no\n' \
-	| sudo tee "${rmnt}/etc/systemd/system/serial-getty@ttyS7.service.d/override.conf" >/dev/null
-sudo cat "${rmnt}/etc/systemd/system/serial-getty@ttyS7.service.d/override.conf"
-
 # Nothing at the kernel level configures ttyS7's baud rate -- it's not a
 # kernel console= target (only ttyS2 is), so the kernel's own console
-# driver setup never touches it. Normally agetty is the only thing that
-# ever sets it to 115200, as part of serial-getty@ttyS7 starting up --
-# but that happens much later in boot (~25s+) than systemd-journald
-# (~5-6s), which starts writing to /dev/ttyS7 immediately per
-# TTYPath= above. Confirmed on real hardware: journald's early writes
-# came out as a long burst of garbage/NUL bytes on a 115200 listener
-# until something (in testing, a manual `stty` command) explicitly
-# configured the port -- after that, both the manual test and journald's
-# own subsequent writes came through clean. Force the baud rate via an
-# ExecStartPre on journald itself, so it's correct before journald's
-# first write, independent of getty timing.
+# driver setup never touches it, and (per 5b above) there's no getty on
+# ttyS7 either to set it as a side effect of starting up. Without this
+# fix, journald's early writes -- systemd-journald starts around 5-6s
+# into boot, well before anything else would ever touch this tty --
+# come out as a long burst of garbage/NUL bytes on a 115200 listener,
+# confirmed on real hardware; a manual `stty` command fixed it
+# immediately (both the manual test and journald's own subsequent
+# writes came through clean afterward), which is what this ExecStartPre
+# now does automatically, before journald's first write.
 log "Forcing ttyS7 to 115200 8N1 before journald starts writing to it"
 sudo mkdir -p "${rmnt}/etc/systemd/system/systemd-journald.service.d"
 printf '[Service]\nExecStartPre=/usr/bin/stty -F /dev/ttyS7 115200 raw -echo\n' \
