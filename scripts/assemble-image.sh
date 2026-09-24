@@ -18,7 +18,11 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work="${PB2_BUILD_DIR:-${here}/.build}"
-release="${here}/release"
+# NOT named "release": image-builder's own .project (sourced below,
+# from the .conf's own "release" var, e.g. "13.7") clobbers a same-named
+# variable when sourced -- found by actually running this script end to
+# end, which silently wrote the final image to a wrong relative path.
+release_dir="${here}/release"
 
 log() { printf '\n[assemble-image] %s\n' "$1"; }
 
@@ -144,10 +148,10 @@ rmdir "${mnt}"
 # ---------------------------------------------------------------------
 # 6. Ship the result.
 # ---------------------------------------------------------------------
-mkdir -p "${release}"
-final="${release}/$(basename "${img}")"
+mkdir -p "${release_dir}"
+final="${release_dir}/$(basename "${img}")"
 cp "${img}" "${final}"
-( cd "${release}" && sha256sum "$(basename "${final}")" >> SHA256SUMS )
+( cd "${release_dir}" && sha256sum "$(basename "${final}")" >> SHA256SUMS )
 
 log "Done: ${final}"
 log "Default login: debian / temppwd (see image-builder/README.md for the sysconf.txt override)."
