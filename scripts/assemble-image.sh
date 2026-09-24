@@ -208,9 +208,18 @@ sudo cat "${rmnt}/etc/systemd/journald.conf.d/pb2-carrier-uart0-forward.conf"
 # immediately (both the manual test and journald's own subsequent
 # writes came through clean afterward), which is what this ExecStartPre
 # now does automatically, before journald's first write.
+#
+# `raw` alone disables ALL output processing (-opost), which includes
+# onlcr -- the flag that translates outgoing \n to \r\n. Confirmed on
+# real hardware: without opost/onlcr explicitly re-enabled, every kernel
+# log line (which ends in bare \n, per Linux's own internal log format)
+# just drops the cursor down a line without returning to column 0,
+# producing a cascading/staircase display on a real terminal. `opost
+# onlcr` after `raw` restores just that one translation while keeping
+# everything else about raw mode (no line editing, no echo).
 log "Forcing ttyS7 to 115200 8N1 before journald starts writing to it"
 sudo mkdir -p "${rmnt}/etc/systemd/system/systemd-journald.service.d"
-printf '[Service]\nExecStartPre=/usr/bin/stty -F /dev/ttyS7 115200 raw -echo\n' \
+printf '[Service]\nExecStartPre=/usr/bin/stty -F /dev/ttyS7 115200 raw -echo opost onlcr\n' \
 	| sudo tee "${rmnt}/etc/systemd/system/systemd-journald.service.d/pb2-carrier-ttyS7-baud.conf" >/dev/null
 sudo cat "${rmnt}/etc/systemd/system/systemd-journald.service.d/pb2-carrier-ttyS7-baud.conf"
 
