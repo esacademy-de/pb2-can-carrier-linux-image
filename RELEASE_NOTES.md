@@ -319,27 +319,57 @@ may be hidden"):
     driver documentation. Kernel-side probing already works; userspace
     GPU acceleration does not yet (see below) and is not attempted by
     this repo.
-    - **Missing: firmware blob.** `powervr/rogue_33.15.11.3_v1.fw` isn't
-      in the rootfs. It's a real file, present in upstream
-      `linux-firmware` since tag `20231211`, and Debian packages it —
-      `image/package-list.txt` doesn't currently pull in any firmware
-      package, so this file was never installed. Not yet added.
-    - **Missing: a matching Mesa driver.** Checked directly against
-      Debian Trixie's actual `mesa-vulkan-drivers` arm64 package file
-      list: it ships `broadcom, freedreno, gfxstream, lvp, nouveau,
-      panfrost, radeon, virtio` — no PowerVR/imagination driver. Mesa
-      does have a real upstream open-source PowerVR Vulkan/GL driver,
-      but Debian's stock package isn't built with it enabled; using it
-      would mean building Mesa from source with the imagination Vulkan
-      driver turned on, not just installing a package.
-    - **Maturity caveat**: per Mesa's own docs, the AXE-1-16M core
-      specifically is not yet Vulkan-conformant in that driver
-      (conformance so far is on newer BXM-4-64/BXS-4-64 cores only) —
-      using it requires explicitly setting
-      `PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1`.
-    - Getting userspace GPU acceleration working is real, unstarted
-      follow-on work (firmware packaging + a custom Mesa build), not
-      something this image currently attempts.
+    - **RESOLVED — firmware blob added.** `powervr/rogue_33.15.11.3_v1.fw`
+      is a real file, confirmed present (via a direct Debian package
+      contents search, not guessed) in Debian Trixie's
+      `firmware-misc-nonfree` package at exactly
+      `/usr/lib/firmware/powervr/rogue_33.15.11.3_v1.fw`. Added
+      `firmware-misc-nonfree` to `deb_include` in
+      `image-builder/pb2-can-carrier-debian-trixie-iot.conf` (the
+      `non-free-firmware` APT component it needs was already enabled in
+      `deb_components`) and to `image/package-list.txt` for consistency.
+      This silences the real `dmesg` probe failure. **Not yet rebuilt and
+      reflashed to confirm on real hardware.**
+    - **DECLINED for now — userspace GPU acceleration (Mesa/Vulkan/X11).**
+      Owner's actual use case is a plain Xorg/XFCE desktop, accessed
+      remotely over RDP, with GPU-accelerated rendering. Researched and
+      declined as unrealistic for that specific use case, not attempted:
+      - Debian's stock `mesa-vulkan-drivers` (arm64, Trixie) doesn't
+        include a PowerVR/imagination driver at all (confirmed via its
+        actual package file list: `broadcom, freedreno, gfxstream, lvp,
+        nouveau, panfrost, radeon, virtio`) — using it would need
+        building Mesa from source with the imagination Vulkan driver
+        enabled.
+      - This GPU has no native open-source OpenGL driver — Imagination's
+        own strategy routes GL through Zink (an OpenGL-over-Vulkan
+        translation layer), not a direct path. X11 GPU acceleration
+        (`glamor`, which Xorg's `modesetting` driver and `xorgxrdp`'s
+        hardware-acceleration path both require) itself needs a working
+        GL/EGL implementation with shader support — i.e. it would depend
+        on that same Zink translation layer.
+      - No evidence found anywhere of anyone combining Zink with
+        `glamor`/`xorgxrdp` for *any* GPU — every real, working
+        `xorgxrdp`-with-GPU-acceleration report found (Intel, AMD,
+        NVIDIA, Qualcomm Adreno) uses a mature, native Mesa GL driver,
+        not a Vulkan-via-Zink translation.
+      - As of a January 2026 announcement, Imagination's own open-source
+        stack for this exact GPU family (AM625/AXE-1-16M, same core as
+        this board's AM6254) has made real, credible progress — passing
+        Khronos' Vulkan 1.0 conformance suite and running a broader set
+        of Vulkan demo applications than before — but that progress is
+        specifically about Vulkan/Wayland (Weston), not X11/GLX, and
+        Vulkan 1.2 conformance for this core was still pending as of
+        that announcement.
+      - Separately, XFCE itself doesn't need GPU acceleration to be
+        usable, and accessed over RDP the practical bottleneck is
+        network encoding of the remote framebuffer, not local rendering
+        — so even a working GPU path would likely add fragility for
+        little practical benefit in this specific use case.
+      - Conclusion: real, working, mainline progress exists for this
+        GPU, but only on a Vulkan/Wayland path that doesn't serve this
+        use case. Getting X11/glamor/XFCE GPU acceleration working would
+        mean building an unprecedented combination (Zink + glamor) with
+        no known prior success for any GPU. Not pursued.
 
 ## Hardware bring-up status
 

@@ -1,6 +1,10 @@
 # Root filesystem package list (work order §3, §7.2).
 # TODO: pin exact versions against the Debian snapshot recorded in
 # manifests/sources.lock before first build.
+# NOTE: the actual build-time package list lives in
+# image-builder/pb2-can-carrier-debian-trixie-iot.conf's deb_include/
+# deb_additional_pkgs/repo_rcnee_pkg_list -- this file is a planning
+# reference, not yet consumed by any build script.
 
 systemd
 can-utils
@@ -11,3 +15,6 @@ iproute2
 usbutils
 mmc-utils
 rt-tests
+firmware-misc-nonfree # powervr/rogue_33.15.11.3_v1.fw for the AM6254's
+                      # PowerVR GPU (RELEASE_NOTES.md item 10); needs
+                      # the non-free-firmware APT component enabled
