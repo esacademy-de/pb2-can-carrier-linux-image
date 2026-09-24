@@ -92,6 +92,16 @@ without rebuilding by editing `sysconf.txt` on the FAT boot partition
 before first boot, or via BeagleBoard's own Imaging Utility. Document
 this properly before handing the image to anyone else.
 
+**USB gadget mode (NCM network / CDC-ACM serial over USB-C) is
+disabled by default** (`bb-usb-gadgets.service`). Confirmed on real
+hardware: it hangs boot/reboot whenever VBUS is present without a real
+USB host to complete enumeration — reproduces on wall-adapter power
+and on the carrier's own P1 power pins, not just USB-C bench power, and
+is pre-existing on stock BeagleBoard images too (not introduced by
+anything here). It works fine, and only when, a real PC is attached to
+actually enumerate it; enable it manually when needed:
+`sudo systemctl enable --now bb-usb-gadgets.service`.
+
 **Console**: default is stock MAIN_UART6 (SPL, U-Boot, kernel, login),
 matching an unmodified PocketBeagle 2 (work order D-12). Carrier UART0
 (P1.30/P1.32) is fully implemented and confirmed working, but is a
@@ -104,7 +114,8 @@ is enabled on `ttyS2` only. `ttyS7`/UART0 deliberately has **no getty**
 — it's dedicated exclusively to journald's forwarded output instead
 (kernel messages plus every systemd status event,
 `ForwardToConsole=yes`/`TTYPath=/dev/ttyS7`); login when connected to
-UART0 is via the USB-C CDC-ACM gadget or SSH instead. (A getty was
+UART0 is via SSH, or the USB-C CDC-ACM gadget once manually enabled
+(see the USB gadget mode note above — disabled by default). (A getty was
 tried on `ttyS7` too, sharing the wire with journald's forwarding, but
 reverted after real-hardware failures — see `configs/uboot.fragment`
 for the full story.) In the default configuration, kernel log output

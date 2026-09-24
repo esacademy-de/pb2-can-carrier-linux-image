@@ -214,6 +214,24 @@ printf '[Service]\nExecStartPre=/usr/bin/stty -F /dev/ttyS7 115200 raw -echo\n' 
 	| sudo tee "${rmnt}/etc/systemd/system/systemd-journald.service.d/pb2-carrier-ttyS7-baud.conf" >/dev/null
 sudo cat "${rmnt}/etc/systemd/system/systemd-journald.service.d/pb2-carrier-ttyS7-baud.conf"
 
+# bb-usb-gadgets.service (BeagleBoard's own NCM network + CDC-ACM serial
+# USB gadget over USB-C) hangs boot/reboot when VBUS is present without
+# a real USB host ever completing enumeration to unblock its DWC3
+# gadget driver -- confirmed on real hardware with wall power AND with
+# power through the same P1 header pins the carrier board itself uses
+# for power, i.e. this is not just a USB-C bench-power artifact, it
+# reproduces on the actual carrier power path too. Confirmed pre-
+# existing on stock, unmodified BeagleBoard images (not introduced by
+# anything in this carrier's own config) and confirmed to never occur
+# when powered via a PC's USB-C port (a real host completes enumeration
+# and unblocks it). Disabled by default here so boot/reboot is reliable
+# regardless of power source; re-enable manually
+# (`sudo systemctl enable --now bb-usb-gadgets.service`) if USB gadget
+# mode (NCM network / CDC-ACM serial over USB-C) is specifically needed
+# -- it works fine as long as a real USB host is actually attached.
+log "Disabling bb-usb-gadgets.service by default (hangs boot/reboot without a real USB host)"
+sudo rm -f "${rmnt}/etc/systemd/system/multi-user.target.wants/bb-usb-gadgets.service"
+
 sync
 sudo umount "${rmnt}"
 sudo losetup -d "${rloopdev}"
