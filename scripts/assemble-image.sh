@@ -146,6 +146,39 @@ sudo losetup -d "${loopdev}"
 rmdir "${mnt}"
 
 # ---------------------------------------------------------------------
+# 5b. Enable a login getty on BOTH MAIN_UART6 (ttyS2) and carrier UART0
+#     (ttyS7), unconditionally -- independent of which one is the
+#     active kernel console= at any given time.
+#
+#     systemd's own getty-generator only creates a getty for whatever
+#     tty is named in the kernel's console= argument at boot. Since only
+#     ONE of ttyS2/ttyS7 is ever in console= at a time (registering both
+#     as simultaneous KERNEL CONSOLES was confirmed on real hardware to
+#     corrupt one of them -- see the UART0/UART6 exclusivity note in
+#     configs/uboot.fragment), the OTHER tty would otherwise have no
+#     login prompt at all. A getty is just agetty listening on a tty --
+#     unrelated to that kernel printk-console-duplication bug -- so
+#     statically enabling both here is safe and does not reintroduce it;
+#     confirmed empirically: /etc/systemd/system/getty.target.wants/
+#     only had the console-driven getty (dynamically generated) and
+#     tty1's own statically-enabled getty -- the non-default UART's
+#     getty was genuinely absent, not just hidden.
+# ---------------------------------------------------------------------
+log "Enabling serial-getty on both ttyS2 (MAIN_UART6) and ttyS7 (carrier UART0)"
+rmnt="$(mktemp -d)"
+rloopdev="$(sudo losetup -P -f --show "${img}")"
+sudo mount "${rloopdev}p3" "${rmnt}"
+for tty in ttyS2 ttyS7; do
+	sudo ln -sf /usr/lib/systemd/system/serial-getty@.service \
+		"${rmnt}/etc/systemd/system/getty.target.wants/serial-getty@${tty}.service"
+done
+sudo ls -la "${rmnt}/etc/systemd/system/getty.target.wants/"
+sync
+sudo umount "${rmnt}"
+sudo losetup -d "${rloopdev}"
+rmdir "${rmnt}"
+
+# ---------------------------------------------------------------------
 # 6. Ship the result.
 # ---------------------------------------------------------------------
 mkdir -p "${release_dir}"

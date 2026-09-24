@@ -99,4 +99,8 @@ manual, reboot-time override — edit `console=ttyS2,115200n8` to
 `console=ttyS7,115200n8` in the "PB2 CAN Carrier" label's `append` line
 in `/extlinux/extlinux.conf` on the flashed boot partition (leave
 `earlycon=` unchanged). Never list both `ttyS2` and `ttyS7` as active
-consoles at once — see `configs/uboot.fragment` for why.
+consoles at once — see `configs/uboot.fragment` for why. A login getty
+is enabled on **both** `ttyS2` and `ttyS7` unconditionally (independent
+of which is the active kernel console), so you can log in on whichever
+UART you're physically connected to without touching `extlinux.conf` at
+all — only the kernel log's destination requires the manual edit above.

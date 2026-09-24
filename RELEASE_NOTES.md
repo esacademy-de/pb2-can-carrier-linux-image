@@ -221,6 +221,27 @@ may be hidden"):
      UART0. Same class of limitation as the SPL/U-Boot-stage console
      (item 1) — closing it fully would need the same custom-signed
      U-Boot build, not done for the same reasons.
+   - **Login getty on both UARTs, independent of `console=`.**
+     systemd's `getty-generator` only creates a login getty for whatever
+     tty is named in the kernel's `console=` argument — since only one of
+     `ttyS2`/`ttyS7` is ever in `console=` at a time (the exclusivity
+     rule above), the *other* UART would otherwise have no login prompt
+     at all, confirmed empirically: inspecting a built image's
+     `/etc/systemd/system/getty.target.wants/` showed only `tty1`'s
+     statically-enabled getty, nothing for either serial UART — the
+     non-default one's getty was genuinely absent, not just dynamically
+     generated and hidden from static inspection. A getty is just
+     `agetty` listening on a tty, unrelated to the kernel
+     printk-console-duplication bug, so statically enabling both is
+     safe. `scripts/assemble-image.sh` now mounts the rootfs partition as
+     a carrier-finalization step and symlinks both
+     `serial-getty@ttyS2.service` and `serial-getty@ttyS7.service` into
+     `getty.target.wants/` (`ln -sf
+     /usr/lib/systemd/system/serial-getty@.service ...`), so both UARTs
+     have a login prompt available regardless of which one is the active
+     kernel console. Verified against the real built image (mount,
+     create, list, remove, unmount cycle) — not yet re-verified on real
+     hardware with a fresh build.
 
 7. **`manifests/sources.lock`** still has two open TODOs:
    `beagleboard/image-builder`'s exact build-time commit (currently
