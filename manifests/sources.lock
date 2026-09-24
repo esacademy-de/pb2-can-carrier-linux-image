@@ -38,10 +38,18 @@ rt_patch_url = "https://mirrors.edge.kernel.org/pub/linux/kernel/projects/rt/6.1
 # in the recipe's own K3 patch series -- its "imagination" backport
 # (Imagination PowerVR GPU driver, backported from v6.19.14) fails to
 # `git am` cleanly against 6.18.37. That backport targets AM62A/AM68A/
-# J721S2 (boards with a PowerVR GPU); AM625/PocketBeagle 2 has no such
-# GPU, so scripts/build-image.sh skips just that one patch.sh entry
-# (commented out, with the reasoning recorded inline) rather than
-# reverting to 6.18.52 and losing PREEMPT_RT. Every other entry in the
+# J721S2 boards specifically -- CORRECTION (see RELEASE_NOTES.md item 10):
+# this does NOT mean "PocketBeagle 2 has no GPU". The AM6254 SoC used on
+# PocketBeagle 2 Rev A1 (owner-confirmed: this is what our unit has) DOES
+# have an Imagination PowerVR Rogue AXE-1-16M GPU, and the mainline
+# drm/imagination driver (in-tree since Linux 6.8, well before this
+# 6.18.37 base -- no patch needed) already probes it on real hardware
+# (confirmed via dmesg: "powervr fd00000.gpu ... probe with driver
+# powervr"). The skipped recipe patch is a separate, later backport for
+# other/newer chips, unrelated to the base driver already in this kernel.
+# scripts/build-image.sh skips just that one patch.sh entry (commented
+# out, with the reasoning recorded inline) rather than reverting to
+# 6.18.52 and losing PREEMPT_RT. Every other entry in the
 # recipe's patch series (TI K3 support, rpi-backports, uio) applies
 # cleanly at 6.18.37.
 

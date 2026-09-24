@@ -298,6 +298,49 @@ may be hidden"):
      considered validated (ETH-01..ETH-05, work order §11) until this is
      re-checked with the carrier board's DP83867 physically attached.
 
+10. **DOCUMENTATION CORRECTION — this board does have a GPU.**
+    `manifests/sources.lock [kernel.base]` previously said "AM625/
+    PocketBeagle 2 has no such GPU" when explaining why the recipe's
+    "imagination" (PowerVR) kernel patch is skipped. That's wrong for
+    this unit: PocketBeagle 2 **Rev A1** uses the **AM6254** SoC
+    (owner-confirmed), which includes an Imagination PowerVR Rogue
+    **AXE-1-16M** GPU — a real, documented hardware upgrade over the
+    original AM6232-based Rev A0. The skip decision itself still stands
+    for an unrelated reason: the mainline `drm/imagination` PowerVR
+    driver has been in-tree since Linux 6.8 (well before this 6.18.37
+    base) and needs no patch; the recipe's skipped patch is a separate,
+    later backport targeting other/newer chips (AM62A/AM68A/J721S2).
+    Confirmed independently: real hardware `dmesg` (captured earlier
+    during Ethernet bring-up, before this GPU question came up) already
+    shows the mainline driver attempting to probe this exact GPU:
+    `powervr fd00000.gpu: Direct firmware load for
+    powervr/rogue_33.15.11.3_v1.fw failed with error -2` — `33.15.11.3`
+    is the AXE-1-16M's BVNC core ID, confirmed against Mesa's own PowerVR
+    driver documentation. Kernel-side probing already works; userspace
+    GPU acceleration does not yet (see below) and is not attempted by
+    this repo.
+    - **Missing: firmware blob.** `powervr/rogue_33.15.11.3_v1.fw` isn't
+      in the rootfs. It's a real file, present in upstream
+      `linux-firmware` since tag `20231211`, and Debian packages it —
+      `image/package-list.txt` doesn't currently pull in any firmware
+      package, so this file was never installed. Not yet added.
+    - **Missing: a matching Mesa driver.** Checked directly against
+      Debian Trixie's actual `mesa-vulkan-drivers` arm64 package file
+      list: it ships `broadcom, freedreno, gfxstream, lvp, nouveau,
+      panfrost, radeon, virtio` — no PowerVR/imagination driver. Mesa
+      does have a real upstream open-source PowerVR Vulkan/GL driver,
+      but Debian's stock package isn't built with it enabled; using it
+      would mean building Mesa from source with the imagination Vulkan
+      driver turned on, not just installing a package.
+    - **Maturity caveat**: per Mesa's own docs, the AXE-1-16M core
+      specifically is not yet Vulkan-conformant in that driver
+      (conformance so far is on newer BXM-4-64/BXS-4-64 cores only) —
+      using it requires explicitly setting
+      `PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1`.
+    - Getting userspace GPU acceleration working is real, unstarted
+      follow-on work (firmware packaging + a custom Mesa build), not
+      something this image currently attempts.
+
 ## Hardware bring-up status
 
 Owner-driven bring-up on real hardware is underway (not yet complete).
