@@ -194,6 +194,22 @@ printf '[Journal]\nForwardToConsole=yes\nTTYPath=/dev/ttyS7\n' \
 	| sudo tee "${rmnt}/etc/systemd/journald.conf.d/pb2-carrier-uart0-forward.conf" >/dev/null
 sudo cat "${rmnt}/etc/systemd/journald.conf.d/pb2-carrier-uart0-forward.conf"
 
+# serial-getty@.service's own TTYVHangup=yes performs a vhangup(2) on
+# the tty as part of starting up, which disconnects any process already
+# holding that device open -- including journald's own TTYPath
+# connection above, established earlier in boot (systemd-journald.service
+# starts well before getty.target). Confirmed on real hardware: without
+# this override, UART0 goes completely silent for the rest of boot the
+# moment serial-getty@ttyS7 starts, even though journald's forwarding
+# config is present and correct. Override it for the ttyS7 instance only
+# -- ttyS2's getty has no such conflict (nothing else uses ttyS2 as a
+# forwarding target), so it's left with the stock TTYVHangup=yes.
+log "Disabling TTYVHangup for serial-getty@ttyS7 (would sever journald's UART0 connection)"
+sudo mkdir -p "${rmnt}/etc/systemd/system/serial-getty@ttyS7.service.d"
+printf '[Service]\nTTYVHangup=no\n' \
+	| sudo tee "${rmnt}/etc/systemd/system/serial-getty@ttyS7.service.d/override.conf" >/dev/null
+sudo cat "${rmnt}/etc/systemd/system/serial-getty@ttyS7.service.d/override.conf"
+
 sync
 sudo umount "${rmnt}"
 sudo losetup -d "${rloopdev}"
