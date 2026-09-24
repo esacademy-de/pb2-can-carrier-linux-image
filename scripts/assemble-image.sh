@@ -111,7 +111,7 @@ sudo losetup -o 1048576 --sizelimit $((524288 * 512)) "${loopdev}" "${img}"
 sudo mount "${loopdev}" "${mnt}"
 sudo cp "${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo" "${mnt}/overlays/"
 
-python3 - "${mnt}/extlinux/extlinux.conf" <<'PYEOF'
+sudo python3 - "${mnt}/extlinux/extlinux.conf" <<'PYEOF'
 import sys
 path = sys.argv[1]
 with open(path) as f:
