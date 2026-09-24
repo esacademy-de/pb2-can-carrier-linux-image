@@ -57,15 +57,18 @@ CONFIG_OF_BOARD_FIXUP=y
 # scripts/assemble-image.sh -- CONFIRMED on real hardware (see
 # RELEASE_NOTES.md item 6):
 #
-#   console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02860000
+#   console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02860000 systemd.show_status=no
 #
-# This is the SAME default a stock, unmodified PocketBeagle 2 uses --
-# MAIN_UART6 (ttyS2) as the complete console, no carrier-specific
-# console override applied out of the box (work order D-12, superseding
-# the earlier D-06 decision to make carrier UART0 the default). The
-# carrier overlay still applies UART0's pinctrl unconditionally, so the
-# UART0 device always exists as a plain serial port; it's just not a
-# registered kernel console by default.
+# The console= and earlycon= values are the SAME default a stock,
+# unmodified PocketBeagle 2 uses -- MAIN_UART6 (ttyS2) as the complete
+# console, no carrier-specific console override applied out of the box
+# (work order D-12, superseding the earlier D-06 decision to make
+# carrier UART0 the default). The carrier overlay still applies UART0's
+# pinctrl unconditionally, so the UART0 device always exists as a plain
+# serial port; it's just not a registered kernel console by default.
+# systemd.show_status=no is the one carrier-specific addition to an
+# otherwise-stock command line -- see "UART6/UART0 output split" below
+# for why.
 #
 # MANUAL UART0 OVERRIDE. To switch the kernel-stage console to carrier
 # UART0 (P1.30/P1.32), hand-edit the "PB2 CAN Carrier" label's `append`
@@ -111,3 +114,30 @@ CONFIG_OF_BOARD_FIXUP=y
 #   over from the earlycon boot console) are only visible on UART6's
 #   physical pin, not on UART0 -- a documented limitation, same class as
 #   the SPL/U-Boot-stage limitation above.
+#
+# UART6/UART0 OUTPUT SPLIT (default config only -- moot when UART0 is
+# manually selected as console= above, since then there is only one
+# active UART to begin with). Confirmed on real hardware via a raw byte-
+# level UART capture (see tests/): PID1's own direct status writer (the
+# "[ OK ] ..." lines) and kernel printk both write to /dev/console
+# (bound to ttyS2/UART6) independently and unsynchronized, splicing each
+# other's output mid-write on the slow 115200 baud line -- this is what
+# produced the garbled/interleaved text and stray BEL bytes observed on
+# real hardware, NOT a hardware fault (confirmed reproducible with
+# identical timing across boots). systemd.show_status=no stops PID1's
+# own status writer from touching /dev/console at all; kernel printk is
+# a separate broadcast mechanism and is completely unaffected. Systemd's
+# status stream isn't lost -- scripts/assemble-image.sh writes
+# /etc/systemd/journald.conf.d/pb2-carrier-uart0-forward.conf
+# (`ForwardToConsole=yes` + `TTYPath=/dev/ttyS7`) into the rootfs,
+# so journald forwards its complete stream (kernel messages plus every
+# systemd status event) to UART0 exclusively. This is deliberately NOT
+# done via a second kernel console=ttyS7 -- that was confirmed above to
+# corrupt UART6 at the ttyS7 driver handoff. journald forwarding is a
+# userspace-only mechanism, independent of kernel console registration,
+# so it carries none of that risk. Caveat: ttyS7 also carries a login
+# getty (scripts/assemble-image.sh), so journald's forwarded writes and
+# agetty's own login-prompt text share that wire -- expected to be much
+# lower-risk than the UART6 case (journald writes whole lines at once;
+# agetty is otherwise idle at "login:"), but not yet proven
+# collision-free on real hardware.

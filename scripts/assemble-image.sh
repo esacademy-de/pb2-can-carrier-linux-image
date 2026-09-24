@@ -127,7 +127,7 @@ content = content.replace(
 )
 carrier_label = """label PB2 CAN Carrier
     kernel /Image.gz
-    append console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02860000 root=/dev/mmcblk1p3 ro rootfstype=ext4 fsck.repair=yes resume=/dev/mmcblk1p2 rootwait net.ifnames=0
+    append console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02860000 systemd.show_status=no root=/dev/mmcblk1p3 ro rootfstype=ext4 fsck.repair=yes resume=/dev/mmcblk1p2 rootwait net.ifnames=0
     fdtdir /
     fdtoverlays /overlays/k3-am62-pocketbeagle2-can-carrier.dtbo
     #initrd /initrd.img
@@ -173,6 +173,27 @@ for tty in ttyS2 ttyS7; do
 		"${rmnt}/etc/systemd/system/getty.target.wants/serial-getty@${tty}.service"
 done
 sudo ls -la "${rmnt}/etc/systemd/system/getty.target.wants/"
+
+# ---------------------------------------------------------------------
+# 5c. Split kernel printk (UART6/ttyS2, via console= above) from all of
+#     systemd's own output (UART0/ttyS7 exclusively), via journald's own
+#     ForwardToConsole=/TTYPath= -- NOT via a second kernel console=,
+#     which was confirmed on real hardware to corrupt UART6 at the
+#     ttyS7 driver handoff (see the UART0/UART6 exclusivity note in
+#     configs/uboot.fragment). journald forwarding is a userspace-only
+#     mechanism, independent of kernel console registration, so it
+#     carries none of that risk. Combined with systemd.show_status=no
+#     above (which stops PID1's own direct status writer from touching
+#     /dev/console, i.e. ttyS2), UART6 becomes pure, uninterrupted
+#     kernel printk output, and UART0 gets journald's full stream
+#     (kernel messages + every systemd status event) instead.
+# ---------------------------------------------------------------------
+log "Routing journald's forwarded console output to ttyS7 (carrier UART0) only"
+sudo mkdir -p "${rmnt}/etc/systemd/journald.conf.d"
+printf '[Journal]\nForwardToConsole=yes\nTTYPath=/dev/ttyS7\n' \
+	| sudo tee "${rmnt}/etc/systemd/journald.conf.d/pb2-carrier-uart0-forward.conf" >/dev/null
+sudo cat "${rmnt}/etc/systemd/journald.conf.d/pb2-carrier-uart0-forward.conf"
+
 sync
 sudo umount "${rmnt}"
 sudo losetup -d "${rloopdev}"

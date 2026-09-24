@@ -104,3 +104,9 @@ is enabled on **both** `ttyS2` and `ttyS7` unconditionally (independent
 of which is the active kernel console), so you can log in on whichever
 UART you're physically connected to without touching `extlinux.conf` at
 all — only the kernel log's destination requires the manual edit above.
+In the default configuration, kernel log output (`dmesg`) and systemd's
+own status output are deliberately on different UARTs: raw kernel
+printk stays on `ttyS2`/MAIN_UART6 only (`systemd.show_status=no`), and
+systemd's own status stream is forwarded to `ttyS7`/UART0 exclusively
+via journald (`ForwardToConsole=yes`/`TTYPath=/dev/ttyS7`) — see
+`configs/uboot.fragment` for why they're split this way.

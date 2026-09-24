@@ -243,17 +243,80 @@ may be hidden"):
      create, list, remove, unmount cycle) — not yet re-verified on real
      hardware with a fresh build.
 
-7. **`manifests/sources.lock`** still has two open TODOs:
+7. **RESOLVED (mechanism verified, not yet re-tested on hardware) —
+   garbled console output and stray BEL bytes during boot, root-caused
+   via a raw byte-level UART capture.** The owner reported console text
+   occasionally getting overwritten mid-line and hearing the terminal
+   bell several times during boot, always at identical points. Captured
+   with a purpose-built Python script (`tests/capture_serial.py`, not
+   committed — ad hoc diagnostic tool) that logs the exact bytes
+   received, annotating every non-printable byte as an explicit
+   `[0xHH]` token instead of letting a terminal interpret it. This
+   showed two independent, fully-understood mechanisms, neither a
+   hardware fault:
+   - **PID1's own status writer racing kernel printk on the same wire.**
+     Both write to `/dev/console` (bound to `ttyS2`/MAIN_UART6)
+     independently and unsynchronized; on some (not all) status lines,
+     a kernel dmesg line lands mid-write inside PID1's own
+     carriage-return-based line redraw, splicing the two together —
+     exactly the "print over" symptom. **Fix**: `systemd.show_status=no`
+     added to the default `console=` line, stopping PID1's own status
+     writer from touching `/dev/console` at all. Kernel printk is a
+     separate broadcast mechanism, completely unaffected — UART6 stays
+     fully verbose. PID1's status stream isn't lost: journald forwards
+     its complete stream (kernel messages plus every systemd status
+     event) to **UART0 exclusively**, via a new
+     `/etc/systemd/journald.conf.d/pb2-carrier-uart0-forward.conf`
+     (`ForwardToConsole=yes` + `TTYPath=/dev/ttyS7`) written into the
+     rootfs by `scripts/assemble-image.sh`. Deliberately *not* done via
+     a second kernel `console=ttyS7` — confirmed above (item 6) to
+     corrupt UART6 at the driver handoff. journald forwarding is a
+     userspace-only mechanism, independent of kernel console
+     registration, so it carries none of that risk. Caveat: `ttyS7`
+     also carries a login getty (item 6), so journald's forwarded
+     writes and `agetty`'s own login-prompt text share that wire —
+     expected to be much lower-risk than the UART6 case (journald
+     writes whole lines at once; `agetty` is otherwise idle at
+     "login:"), but not yet proven collision-free on real hardware.
+     Verified: the `journald.conf.d` drop-in mechanism itself (via
+     `systemd-analyze --root=... cat-config`, confirming the drop-in is
+     correctly discovered and layered into the effective config) —
+     **the actual fix (`systemd.show_status=no` + the drop-in together)
+     has not yet been re-tested on real hardware.**
+   - **The "won't finish booting"/apparent hang with a passive capture
+     script is not a bug.** At the very end of boot, `agetty` sends
+     `ESC[6n` (a cursor-position query, part of standard terminal
+     capability detection) and blocks waiting for a response over the
+     same serial line. A real terminal (PuTTY) answers this
+     automatically; a read-only capture script cannot, so the board
+     waits indefinitely — confirmed in a second capture where the owner
+     waited ~44 seconds with nothing happening, then power-cycled the
+     board, which is visible in the capture as a clean, normal systemd
+     shutdown sequence starting at that exact moment. The board was
+     never hung.
+   - **The BEL bytes are not corruption.** Both captures show the exact
+     same sequence — `ESC!p` (soft terminal reset) + `ESC]104<BEL>`
+     (OSC 104, reset ANSI color palette, BEL-terminated per standard
+     ECMA-48 convention) + `ESC[?7h` (enable autowrap) — at the same two
+     points every boot: once as systemd's console output begins, once
+     as the login getty initializes. This is a legitimate, intentional
+     control sequence; PuTTY (like many terminals) audibly rings the
+     bell for any `0x07` byte regardless of whether it's a real alert or
+     a control-sequence terminator, which is a terminal-emulator
+     behavior/setting (PuTTY: Terminal → Bell), not a defect in this
+     image.
+
+8. **`manifests/sources.lock`** still has two open TODOs:
    `beagleboard/image-builder`'s exact build-time commit (currently
    pinned to a snapshot of `master`, which has no release tags) and the
    Debian snapshot.debian.org timestamp for the rootfs.
 
-8. **Signed-off-by lines are placeholders.** Both kernel patches carry a
+9. **Signed-off-by lines are placeholders.** Both kernel patches carry a
    `TODO: Signed-off-by` marker instead of a real DCO trailer — that
    certification must come from a human author before upstream
    submission (work order §6.1); an AI agent must not fabricate it.
 
-9. **PARTIALLY RESOLVED — Ethernet (CPSW/MDIO). Both fixes below were
+10. **PARTIALLY RESOLVED — Ethernet (CPSW/MDIO). Both fixes below were
    tested on the bare PocketBeagle2 module only — the CAN carrier board
    (and its DP83867 PHY chip) has not been attached yet, so this is
    SoC-side/kernel-DT confirmation, not an Ethernet link validation.**
@@ -319,7 +382,7 @@ may be hidden"):
      considered validated (ETH-01..ETH-05, work order §11) until this is
      re-checked with the carrier board's DP83867 physically attached.
 
-10. **DOCUMENTATION CORRECTION — this board does have a GPU.**
+11. **DOCUMENTATION CORRECTION — this board does have a GPU.**
     `manifests/sources.lock [kernel.base]` previously said "AM625/
     PocketBeagle 2 has no such GPU" when explaining why the recipe's
     "imagination" (PowerVR) kernel patch is skipped. That's wrong for
@@ -397,11 +460,13 @@ may be hidden"):
 Owner-driven bring-up on real hardware is underway (not yet complete).
 Confirmed so far, via live UART console debugging with the owner:
 - **CON-01/CON-02 (UART0 carrier console): RESOLVED**, see item 6 above.
+- **Garbled console output / stray BEL bytes: root-caused, fix written,
+  not yet re-tested on hardware**, see item 7 above.
 - **ETH (Ethernet): PARTIALLY resolved.** MDIO0/PIN88 pinmux conflict
   fix and RGMII TX delay warning fix are both confirmed working on the
   bare PocketBeagle2 module (kernel/DT level only). The CAN carrier
   board with the actual DP83867 PHY has **not** been attached, so no
-  real Ethernet link has been tested yet. See item 9 above.
+  real Ethernet link has been tested yet. See item 10 above.
 
 Every other item in work order §11's validation matrix (CAN-01..CAN-05,
 remaining ETH items, etc.) has not been attempted yet — see
