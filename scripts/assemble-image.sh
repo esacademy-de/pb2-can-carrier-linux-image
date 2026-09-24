@@ -83,7 +83,11 @@ source "${ibdir}/.project"
 deploy_dir="${ibdir}/deploy/${export_filename}"
 
 log "image-builder: verifying our carrier kernel landed in the built rootfs"
-grep -q "^linux-image-.*-arm64-k3-r56" "${deploy_dir}/dpkg-list.txt"
+# dpkg-list.txt is `dpkg -l` output: "ii  <pkg> <ver> <arch> <desc>" --
+# the package name is NOT at column 0 (found by actually running this
+# script end to end; the old ^-anchored pattern never matched and failed
+# the build even though the correct kernel package was installed).
+grep -qE "^ii +linux-image-[^ ]*-arm64-k3-r56 " "${deploy_dir}/dpkg-list.txt"
 
 # ---------------------------------------------------------------------
 # 4. Produce the flashable .img (real PocketBeagle 2 hwpack, swap
