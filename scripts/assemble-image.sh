@@ -70,8 +70,12 @@ chmod +x "${ibdir}/RootStock-NG.sh" "${ibdir}/scripts/"*.sh
 #    of BeagleBoard's stock bbb.io-kernel-6.18-k3.
 # ---------------------------------------------------------------------
 log "image-builder: running RootStock-NG.sh (debootstrap + chroot -- this is the slow part)"
-PB2_CARRIER_DEB_DIR="${kdir}/deploy" \
-	bash "${ibdir}/RootStock-NG.sh" -c pb2-can-carrier-debian-trixie-iot
+# RootStock-NG.sh resolves its config/ directory relative to $PWD, not its
+# own script location -- must cd into ibdir first or it prints "Invalid
+# *.conf" (found by actually running this script end to end).
+( cd "${ibdir}" && \
+  PB2_CARRIER_DEB_DIR="${kdir}/deploy" \
+  bash ./RootStock-NG.sh -c pb2-can-carrier-debian-trixie-iot )
 
 # shellcheck disable=SC1091
 source "${ibdir}/.project"
