@@ -1,7 +1,7 @@
 # Kernel patches
 
-Both patches required by the work order (§1.1, §6) are written and fully
-validated: `git am`-applied on top of the real, fully-patched kernel tree
+The two patches required by the work order (§1.1, §6) are written and fully
+validated (a third, hardware-driven patch was added after bring-up, see item 3): `git am`-applied on top of the real, fully-patched kernel tree
 (pinned base + the recipe's entire K3/RT patch series) and **compiled with
 zero errors or warnings** against the real kernel config
 (`linux-stable` `v6.18.37`, see `../../manifests/sources.lock`):
@@ -21,6 +21,21 @@ zero errors or warnings** against the real kernel config
    Every failure path unwinds in reverse without leaving the PHY active.
    `m_can_close()` already stopped the queue and the M_CAN core before
    asserting standby, so its order was left unchanged (work order §6.2).
+
+3. `0003-net-phy-dp83867-add-ti-led-function-to-select-the-LE.patch` — adds
+   an optional `ti,led-function` property (four LEDCR1 source codes: LED_0,
+   LED_1, LED_2, LED_GPIO) to `drivers/net/phy/dp83867.c` and its binding
+   (`Documentation/devicetree/bindings/net/ti,dp83867.yaml`), and re-applies
+   it from `dp83867_config_init()` because the PHY drops the selection on
+   every soft reset (including `ip link set eth0 down/up`). The carrier
+   overlay uses it for Raspberry-Pi-4/5-style RJ45 LEDs (green = link, blinks
+   on activity; orange = 1000BASE-T). Added after hardware bring-up
+   (hwbringup/HWBRINGUP_LOG.md §2.3). Verified: compiles with `W=1` without
+   warnings, `dt_binding_check` passes with the new property in the binding
+   example, `checkpatch` only notes that the binding doc and the driver are in
+   one patch (same as patch 0001), and on hardware LEDCR1 reads back `0x65b0`
+   after boot and after `ip link set eth0 down/up`. Same `TODO: Signed-off-by`
+   marker as the other patches.
 
 ## Verification performed
 

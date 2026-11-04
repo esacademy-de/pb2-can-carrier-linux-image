@@ -1,0 +1,140 @@
+From 6e285a0c39e9c26a949a0fbd244c617a630330c9 Mon Sep 17 00:00:00 2001
+From: esacademy-de <98397027+esacademy-de@users.noreply.github.com>
+Date: Thu, 5 Nov 2026 00:08:55 +0100
+Subject: [PATCH 3/3] net: phy: dp83867: add ti,led-function to select the LED
+ sources
+
+The PHY's four LED outputs (LED_0, LED_1, LED_2 and the GPIO_0 pin as
+LED_3) default to link / 1000BT link / RX-TX activity / 100BTX link.
+Boards that wire the LEDs differently (for example a Raspberry Pi
+style RJ45: green = link with blink on activity, amber = 1000BT link)
+need other sources, but the selection is lost on every PHY soft reset,
+so it cannot be left to a one-shot userspace write: an "ip link set
+down/up" returns the PHY to its defaults.
+
+Add an optional ti,led-function property with the four LEDCR1 source
+codes in the order LED_0, LED_1, LED_2, LED_GPIO and re-program LEDCR1
+from dp83867_config_init(), after the reset done by phy_init_hw().
+Without the property the PHY's default LED configuration is untouched,
+and the existing PHY LED class device callbacks keep working.
+
+TODO: Signed-off-by -- add your name and email before submitting
+this patch upstream (DCO certification must come from a human
+author/maintainer, not be fabricated).
+---
+ .../devicetree/bindings/net/ti,dp83867.yaml   | 19 +++++++++
+ drivers/net/phy/dp83867.c                     | 41 ++++++++++++++++++-
+ 2 files changed, 59 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/devicetree/bindings/net/ti,dp83867.yaml b/Documentation/devicetree/bindings/net/ti,dp83867.yaml
+index 4bc1f98fd9fe..9401eb7661bd 100644
+--- a/Documentation/devicetree/bindings/net/ti,dp83867.yaml
++++ b/Documentation/devicetree/bindings/net/ti,dp83867.yaml
+@@ -111,6 +111,24 @@ properties:
+       This denotes which SGMII configuration is used (4 or 6-wire modes).
+       Some MACs work with differential SGMII clock. See data manual for details.
+ 
++  ti,led-function:
++    $ref: /schemas/types.yaml#/definitions/uint32-array
++    minItems: 4
++    maxItems: 4
++    items:
++      maximum: 14
++    description: |
++      Function shown by each of the PHY's LED outputs, in the order LED_0,
++      LED_1, LED_2 and LED_GPIO (the GPIO_0 pin when muxed as LED_3). Each cell
++      is the 4-bit source code of the matching field in the LED Configuration
++      Register 1 (LEDCR1): 0 link established, 1 RX/TX activity, 2 TX activity,
++      3 RX activity, 4 collision, 5 1000BT link, 6 100BTX link, 7 10BT link,
++      8 10/100BT link, 9 100/1000BT link, 10 full duplex, 11 link established
++      with blink on RX/TX activity, 13 RX or TX error, 14 RX error (12 is
++      reserved). The PHY loses this selection on every soft
++      reset, so the driver re-programs it each time the PHY is initialised.
++      When omitted the PHY's default LED configuration is left as is.
++
+   ti,fifo-depth:
+     deprecated: true
+     $ref: /schemas/types.yaml#/definitions/uint32
+@@ -137,5 +155,6 @@ examples:
+         ti,clk-output-sel = <DP83867_CLK_O_SEL_CHN_A_RCLK>;
+         ti,rx-internal-delay = <DP83867_RGMIIDCTL_2_25_NS>;
+         ti,tx-internal-delay = <DP83867_RGMIIDCTL_2_75_NS>;
++        ti,led-function = <0 11 5 6>;
+       };
+     };
+diff --git a/drivers/net/phy/dp83867.c b/drivers/net/phy/dp83867.c
+index 36a0c1b7f59c..de9b685de75b 100644
+--- a/drivers/net/phy/dp83867.c
++++ b/drivers/net/phy/dp83867.c
+@@ -187,6 +187,8 @@ struct dp83867_private {
+ 	bool set_clk_output;
+ 	u32 clk_output_sel;
+ 	bool sgmii_ref_clk_en;
++	bool set_led_fn;
++	u8 led_fn[DP83867_LED_COUNT];
+ };
+ 
+ static int dp83867_ack_interrupt(struct phy_device *phydev)
+@@ -550,7 +552,8 @@ static int dp83867_of_init(struct phy_device *phydev)
+ 	struct dp83867_private *dp83867 = phydev->priv;
+ 	struct device *dev = &phydev->mdio.dev;
+ 	struct device_node *of_node = dev->of_node;
+-	int ret;
++	u32 led_fn[DP83867_LED_COUNT];
++	int ret, i;
+ 
+ 	if (!of_node)
+ 		return -ENODEV;
+@@ -602,6 +605,28 @@ static int dp83867_of_init(struct phy_device *phydev)
+ 		return -EINVAL;
+ 	}
+ 
++	/* Optional: LED_0, LED_1, LED_2, LED_GPIO function select (LEDCR1) */
++	ret = of_property_read_variable_u32_array(of_node, "ti,led-function",
++						  led_fn, DP83867_LED_COUNT,
++						  DP83867_LED_COUNT);
++	if (ret == DP83867_LED_COUNT) {
++		for (i = 0; i < DP83867_LED_COUNT; i++) {
++			if (led_fn[i] > DP83867_LED_FN_RX_ERR) {
++				phydev_err(phydev,
++					   "ti,led-function[%d] value %u out of range\n",
++					   i, led_fn[i]);
++				return -EINVAL;
++			}
++			dp83867->led_fn[i] = led_fn[i];
++		}
++		dp83867->set_led_fn = true;
++	} else if (ret != -EINVAL) {
++		/* -EINVAL only means "property not present" */
++		phydev_err(phydev, "ti,led-function needs exactly %d cells\n",
++			   DP83867_LED_COUNT);
++		return -EINVAL;
++	}
++
+ 	if (of_property_read_bool(of_node, "enet-phy-lane-swap"))
+ 		dp83867->port_mirroring = DP83867_PORT_MIRROING_EN;
+ 
+@@ -814,6 +839,20 @@ static int dp83867_config_init(struct phy_device *phydev)
+ 			       DP83867_IO_MUX_CFG_IO_IMPEDANCE_MASK,
+ 			       dp83867->io_impedance);
+ 
++	/* The PHY LED function selects are lost on every soft reset, so apply
++	 * the board's choice here, after the reset done by phy_init_hw().
++	 */
++	if (dp83867->set_led_fn) {
++		int i;
++
++		val = 0;
++		for (i = 0; i < DP83867_LED_COUNT; i++)
++			val |= DP83867_LED_FN(i, dp83867->led_fn[i]);
++		ret = phy_write(phydev, DP83867_LEDCR1, val);
++		if (ret)
++			return ret;
++	}
++
+ 	if (phydev->interface == PHY_INTERFACE_MODE_SGMII) {
+ 		/* For support SPEED_10 in SGMII mode
+ 		 * DP83867_10M_SGMII_RATE_ADAPT bit
+-- 
+2.43.0
+
