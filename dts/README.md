@@ -41,7 +41,7 @@ pattern BeagleBoard's own overlays use for `&{/chosen}`).
 
 - 3× CAN-FD ports: TCAN3413 generic PHY nodes (`ti,tcan3413`, patches/kernel/0001-...) + `main_mcan0`/`mcu_mcan1`/`mcu_mcan0` controllers
 - Carrier UART0 as primary console, MAIN_UART6 untouched as secondary — driven by kernel cmdline, not `/chosen/stdout-path` (see the overlay's `&{/chosen}` comment for why, and `configs/uboot.fragment` for the cmdline itself)
-- Gigabit Ethernet: CPSW port 2, MDIO0, DP83867 `ethernet-phy@1`, `phy-mode = "rgmii-rxid"`, `ti,rx-internal-delay = DP83867_RGMIIDCTL_2_00_NS`, reset/interrupt GPIOs
+- Gigabit Ethernet: CPSW port 2, MDIO0, DP83867 `ethernet-phy@1`, `phy-mode = "rgmii-id"` (the MAC driver maps it to RX-delay-only), `ti,rx-internal-delay = DP83867_RGMIIDCTL_2_50_NS` (measured centre of the clean 2.25-2.75 ns window; 2.00 ns gave ~35 % CRC errors on this hardware), reset GPIO, interrupt GPIO1_18 as `IRQ_TYPE_EDGE_FALLING` (the K3 GPIO controller cannot do level interrupts), and `ti,led-function = <0 11 5 6>` for Raspberry-Pi-style RJ45 LEDs (needs kernel patch 0003)
 - User LED (`carrier:user`, GPIO0_55, active-low) merged into the stock `/leds` node alongside USR LED 1-4
 - SPI2 controller only (no spidev / child device in this overlay)
 - 13× J3 GPIO lines as unclaimed, no-pull inputs with `J3_<pin>_GPIO<bank>_<n>` libgpiod line names
@@ -57,9 +57,11 @@ spidev node (work order §5.1, §7.2, §11 SPI-01).
 
 ## Known open items (see RELEASE_NOTES.md for the full list)
 
-- `cpsw_port2` has no efuse-backed MAC address hookup (only port1 has
-  one in the pinned SoC dtsi) — persistence relies on U-Boot's board
-  fixup instead; needs bring-up confirmation (§11 ETH-04).
+- Persistent MAC: only `cpsw_port1` has the SoC eFuse MAC hookup in the pinned SoC dtsi, but this carrier
+  uses port 2, so the overlay adds `ti,syscon-efuse = <&cpsw_mac_syscon 0x0>` to `&cpsw_port2`
+  (the U-Boot fixup this used to rely on does not happen on real hardware). Verified: the interface
+  takes the factory MAC (`0x43000200/204`) and keeps it across reboots (§11 ETH-04; the 5x cold-boot
+  run is still to be done).
 
 `main_spi0` (stock, no consumer found in the base DTS) is explicitly
 disabled by this overlay: its pinctrl claimed ball A14 (companion of

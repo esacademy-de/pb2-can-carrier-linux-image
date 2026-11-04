@@ -236,10 +236,17 @@
  *
  * RGMII2 pin group and the phy-mode/ti,rx-internal-delay pairing verified
  * against linux-stable v6.18 k3-am625-sk-common.dtsi, which uses the
- * identical AM625 RGMII2 balls with phy-mode "rgmii-rxid" and
- * DP83867_RGMIIDCTL_2_00_NS -- matching the decoded hardware straps in
- * work order §4.3.1 (RX delay 2.0 ns, TX delay 0 ns, PHY TX delay left
- * unprogrammed).
+ * identical AM625 RGMII2 balls with phy-mode "rgmii-rxid" (the SK board
+ * uses DP83867_RGMIIDCTL_2_00_NS).
+ *
+ * This carrier needs a different RX delay: the hardware straps decode to
+ * 2.0 ns (work order §4.3.1), but on real hardware 2.0 ns sits on the
+ * edge of the working window (about 30-40 % CRC errors on received frames
+ * and the same share of lost pings at 1 Gbit/s). A sweep of the PHY's RX
+ * delay showed a clean window of 2.25-2.75 ns (0 CRC errors over 1500 x
+ * 1400 B pings at 2.25, 2.50 and 2.75 ns); 2.50 ns is its centre. See
+ * hwbringup/HWBRINGUP_LOG.md sections 2.1 and 2.2. TX delay stays 0 ns
+ * (the MAC supplies it, D-10).
  * ---------------------------------------------------------------------
  */
 &main_pmx0 {
@@ -356,16 +363,17 @@
 	phy-mode = "rgmii-id";
 	phy-handle = <&cpsw3g_phy1>;
 	status = "okay";
-	/* mac-address left unset: this SoC's cpsw_port1 gets its MAC from
-	 * &cpsw_mac_syscon efuse offset 0x0 (see k3-am62-main.dtsi), but no
-	 * second efuse-backed MAC slot for port2 was found anywhere in the
-	 * pinned BeagleBoard-DeviceTrees tree -- inventing an offset here
-	 * would risk reading undefined efuse content. Persistence instead
-	 * relies on U-Boot's standard K3 board fixup, which derives a
-	 * stable eth1addr from the SoC's unique ID and patches it into this
-	 * port's local-mac-address at boot (see configs/uboot.fragment).
-	 * Validate against work order §11 ETH-04 (identical MAC across 5
-	 * cold boots) during bring-up. */
+	/* Persistent MAC (work order §5.4 / §11 ETH-04). Only cpsw_port1 has
+	 * the SoC's factory MAC hooked up in k3-am62-main.dtsi, but this
+	 * carrier uses port 2 (the only external port), so without this
+	 * property the driver logs "Use random MAC address" and the address
+	 * changes on every boot. The U-Boot board fixup this node used to rely
+	 * on does not happen on real hardware (U-Boot reports "Net: No
+	 * ethernet found"). Point port 2 at the same eFuse slot: offset 0 of
+	 * &cpsw_mac_syscon (0x43000200/0x43000204, MAC_ID0/MAC_ID1) holds the
+	 * SoC's factory MAC. Port 1 is not used on this carrier, so the two
+	 * ports never share a MAC on the wire. */
+	ti,syscon-efuse = <&cpsw_mac_syscon 0x0>;
 };
 
 &cpsw3g_mdio {
@@ -379,10 +387,24 @@
 
 	cpsw3g_phy1: ethernet-phy@1 {
 		reg = <1>;
-		ti,rx-internal-delay = <DP83867_RGMIIDCTL_2_00_NS>;
+		/* 2.50 ns = centre of the measured clean window (see the
+		 * RGMII comment above). The Linux driver always writes this
+		 * value, so changing the RX delay straps on the PCB does not
+		 * replace it. */
+		ti,rx-internal-delay = <DP83867_RGMIIDCTL_2_50_NS>;
 		/* PHY TX delay intentionally left unprogrammed (work order
 		 * §4.3.1: decoded PHY TX delay strap = 0 ns; the AM62x MAC
 		 * side supplies TX timing per D-10). */
+		/* RJ45 LEDs, Raspberry Pi 4/5 style (needs kernel patch
+		 * 0003-net-phy-dp83867-add-ti-led-function...). Cells: LED_0,
+		 * LED_1, LED_2, LED_GPIO = LEDCR1 source codes.
+		 *   LED_1 (green, Q1/J6 pins 11-12): 11 = link up, blinks on RX/TX activity
+		 *   LED_2 (orange, Q2/J6 pins 13-14):  5 = 1000BASE-T link only
+		 *   LED_0 is not connected (0), LED_GPIO keeps its default (6;
+		 *   the GPIO_0 pin is not muxed as LED_3, so Q3 stays off).
+		 * The PHY drops this selection on every reset, so the driver
+		 * re-applies it each time the PHY is initialised. */
+		ti,led-function = <0 11 5 6>;
 		reset-gpios = <&main_gpio0 40 GPIO_ACTIVE_LOW>;
 		/* Confirmed against the DP83867E datasheet (TI SNLS504G),
 		 * §6.7 Reset Timing (work order Appendix B link): T4 (RESET_N
@@ -394,7 +416,12 @@
 		reset-assert-us = <1000>;
 		reset-deassert-us = <1000>;
 		interrupt-parent = <&main_gpio1>;
-		interrupts = <18 IRQ_TYPE_LEVEL_LOW>;
+		/* The DP83867 INT pin is active-low open-drain, but the K3 GPIO
+		 * controller cannot do level interrupts: requesting
+		 * IRQ_TYPE_LEVEL_LOW failed on real hardware ("genirq: Setting
+		 * trigger mode 8 for irq failed", PHY fell back to polling).
+		 * The falling edge is what the PHY asserts for each event. */
+		interrupts = <18 IRQ_TYPE_EDGE_FALLING>;
 	};
 };
 
