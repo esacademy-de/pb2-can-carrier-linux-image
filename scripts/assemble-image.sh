@@ -115,6 +115,13 @@ sudo losetup -o 1048576 --sizelimit $((524288 * 512)) "${loopdev}" "${img}"
 sudo mount "${loopdev}" "${mnt}"
 sudo cp "${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo" "${mnt}/overlays/"
 
+# User-editable carrier configuration on the SD card's FAT partition
+# (SSH on/off, password logins); applied at every boot by
+# pb2-boot-config.service (step 5d). Not sysconf.txt: BeagleBoard's
+# bbbio-set-sysconf regenerates that file after each boot and has no SSH
+# switch.
+sudo install -m 0644 "${here}/image/pb2-config.txt" "${mnt}/pb2-config.txt"
+
 sudo python3 - "${mnt}/extlinux/extlinux.conf" <<'PYEOF'
 import sys
 path = sys.argv[1]
@@ -260,6 +267,49 @@ sudo cat "${rmnt}/etc/systemd/system/systemd-journald.service.d/pb2-carrier-ttyS
 # -- it works fine as long as a real USB host is actually attached.
 log "Disabling bb-usb-gadgets.service by default (hangs boot/reboot without a real USB host)"
 sudo rm -f "${rmnt}/etc/systemd/system/multi-user.target.wants/bb-usb-gadgets.service"
+
+# ---------------------------------------------------------------------
+# 5d. SSH over Ethernet, controlled by /boot/firmware/pb2-config.txt on the
+#     SD card (image/pb2-config.txt, step 5), plus per-device SSH host keys.
+#
+#     pb2-boot-config.service runs at every boot, before ssh.service, and
+#     turns the SSH server on or off (Debian's sshd_not_to_be_run) and
+#     optionally disables password logins (only if an authorized key is
+#     installed). ssh.service itself stays enabled, as in the stock image,
+#     so the default (key missing / file missing) is SSH enabled.
+#
+#     Host keys: the stock image ships the keys generated at build time,
+#     i.e. every unit built from the same image would share them.
+#     BeagleBoard's bbbio-set-sysconf regenerates them at first boot when
+#     /etc/bbb.io/ssh_regenerate exists (it then reboots once); that flag
+#     is not set by default, so set it here.
+# ---------------------------------------------------------------------
+log "Installing pb2-boot-config (SSH switch from the SD card) and arming host key regeneration"
+sudo install -m 0755 "${here}/image/pb2-boot-config.sh" "${rmnt}/usr/local/sbin/pb2-boot-config"
+sudo install -m 0644 "${here}/image/pb2-boot-config.service" "${rmnt}/etc/systemd/system/pb2-boot-config.service"
+sudo ln -sf /etc/systemd/system/pb2-boot-config.service \
+	"${rmnt}/etc/systemd/system/multi-user.target.wants/pb2-boot-config.service"
+sudo ln -sf /usr/lib/systemd/system/ssh.service \
+	"${rmnt}/etc/systemd/system/multi-user.target.wants/ssh.service"
+sudo mkdir -p "${rmnt}/etc/bbb.io"
+sudo touch "${rmnt}/etc/bbb.io/ssh_regenerate"
+sudo ls -la "${rmnt}/etc/systemd/system/multi-user.target.wants/" "${rmnt}/etc/bbb.io/ssh_regenerate"
+
+# ---------------------------------------------------------------------
+# 5e. Ethernet link down on power-off. Confirmed on real hardware: after
+#     "sudo poweroff" the DP83867 stays powered and keeps its link (RJ45
+#     LEDs on, switch port up) because nothing in the shutdown path closes
+#     eth0; "ip link set eth0 down" does power the PHY down (kernel
+#     phy_detach -> phy_suspend). pb2-eth-linkdown.service does that late in
+#     poweroff/halt (not reboot), after systemd-networkd has stopped.
+# ---------------------------------------------------------------------
+log "Installing pb2-eth-linkdown.service (Ethernet link down on power-off/halt)"
+sudo install -m 0644 "${here}/image/pb2-eth-linkdown.service" "${rmnt}/etc/systemd/system/pb2-eth-linkdown.service"
+for tgt in poweroff halt; do
+	sudo mkdir -p "${rmnt}/etc/systemd/system/${tgt}.target.wants"
+	sudo ln -sf /etc/systemd/system/pb2-eth-linkdown.service \
+		"${rmnt}/etc/systemd/system/${tgt}.target.wants/pb2-eth-linkdown.service"
+done
 
 sync
 sudo umount "${rmnt}"

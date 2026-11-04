@@ -1,0 +1,25 @@
+# PB2 CAN Carrier configuration - read at every boot from the SD card's FAT
+# partition (this is the file /boot/firmware/pb2-config.txt on the running
+# system; on a PC it is the small partition that shows up as a drive when the
+# SD card is inserted). Edit it with any text editor, put the card back, boot.
+#
+# Format: key=value, one per line. '#' starts a comment. Keys and values are
+# case-insensitive. Unknown keys are ignored. The file is never rewritten.
+# (BeagleBoard's own sysconf.txt next to it is a different file: it is
+# rewritten after each boot and has no SSH on/off switch. Use it for
+# user_authorized_key / user_password / hostname.)
+
+# ssh - SSH server on all network interfaces, including the Ethernet port.
+#   enabled  (default; also used when the key or the whole file is missing)
+#   disabled (no SSH server at all)
+# Default login of this image: user "debian", password "temppwd". CHANGE IT
+# (or switch to key login, below) before connecting the board to a network
+# you do not control.
+ssh=enabled
+
+# ssh_password_auth - allow password logins over SSH.
+#   yes (default)
+#   no  (public-key logins only). Only takes effect if an authorized key is
+#       installed (for example via user_authorized_key in sysconf.txt);
+#       otherwise it is ignored so you cannot lock yourself out.
+ssh_password_auth=yes

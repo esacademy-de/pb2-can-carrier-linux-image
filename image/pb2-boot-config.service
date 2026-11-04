@@ -1,0 +1,15 @@
+[Unit]
+Description=PB2 CAN Carrier boot configuration (/boot/firmware/pb2-config.txt)
+Documentation=file:///boot/firmware/pb2-config.txt
+Requires=boot-firmware.mount
+After=boot-firmware.mount bbbio-set-sysconf.service
+# the ssh on/off switch must be in place before the SSH server is started
+Before=ssh.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pb2-boot-config
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

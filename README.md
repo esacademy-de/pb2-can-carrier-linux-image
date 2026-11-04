@@ -36,6 +36,8 @@ patches/kernel/                     TCAN3413 binding/driver + M_CAN sequencing p
 dts/                                carrier device-tree overlay(s)
 dts/optional-spi-children/          composable SPI child-device overlays (not in base overlay)
 image/package-list.txt              rootfs package list
+image/pb2-config.txt                user-editable config on the SD card's FAT partition (SSH on/off, password logins)
+image/pb2-boot-config.{sh,service}  applies that file at every boot (installed by assemble-image.sh)
 image-builder/                      beagleboard/image-builder integration (patch, config, hook script) + real findings
 scripts/build-image.sh              kernel + device-tree overlay build/validate entry point
 scripts/assemble-image.sh           full pipeline: kernel .deb -> image-builder -> flashable .img
@@ -89,8 +91,24 @@ Write `release/pocketbeagle2-*-4gb.img` to a microSD card with
 balenaEtcher, Raspberry Pi Imager, `dd`, or any other raw-image writer.
 Default login is `debian` / `temppwd` (root disabled) — override it
 without rebuilding by editing `sysconf.txt` on the FAT boot partition
-before first boot, or via BeagleBoard's own Imaging Utility. Document
-this properly before handing the image to anyone else.
+before first boot (`user_password`, `user_authorized_key`, `hostname`), or
+via BeagleBoard's own Imaging Utility. Change the password (or use key
+login) before connecting a board to a network you do not control.
+
+**SSH over Ethernet** is on by default and is switched by `pb2-config.txt`
+on the same FAT boot partition (`/boot/firmware/pb2-config.txt` on the
+running system), applied at every boot before the SSH server starts:
+
+```
+ssh=enabled              # or: disabled  (no SSH server at all)
+ssh_password_auth=yes    # or: no  (key logins only; ignored unless an
+                         #  authorized key is installed, so no lock-out)
+```
+
+Add a public key for key-only login via `user_authorized_key=` in
+`sysconf.txt`. The first boot of a freshly written card regenerates the SSH
+host keys (so no two units share keys) and reboots once. To apply a change
+without rebooting: `sudo pb2-boot-config --apply-now`.
 
 **USB gadget mode (NCM network / CDC-ACM serial over USB-C) is
 disabled by default** (`bb-usb-gadgets.service`). Confirmed on real

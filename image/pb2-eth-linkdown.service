@@ -1,0 +1,22 @@
+[Unit]
+Description=PB2 CAN Carrier: take the Ethernet link down on power-off
+Documentation=file:///usr/share/doc/pb2-can-carrier/README
+# Nothing in the power-off path closes the network interface, so the DP83867
+# PHY stays powered and keeps its link (RJ45 LEDs on, the switch port stays up)
+# after "poweroff". Taking eth0 down makes the kernel power the PHY down
+# (phylink_disconnect_phy -> phy_detach -> phy_suspend -> dp83867_suspend).
+DefaultDependencies=no
+# run after systemd-networkd has stopped (so it cannot bring the link back up)
+# and before the root filesystem is unmounted / the machine is powered off
+After=systemd-networkd.service
+Before=shutdown.target umount.target final.target systemd-poweroff.service systemd-halt.service
+
+[Service]
+Type=oneshot
+# '-': never let a failure here hold up the shutdown
+ExecStart=-/usr/sbin/ip link set eth0 down
+TimeoutStartSec=10
+
+[Install]
+# power off and halt only; a reboot keeps the link flap-free
+WantedBy=poweroff.target halt.target
