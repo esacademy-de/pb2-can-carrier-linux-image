@@ -32,6 +32,10 @@ First bring-up on real hardware (2026-11-04/05) found and fixed:
   this board. The overlay now sets `ti,syscon-efuse = <&cpsw_mac_syscon 0x0>` on port 2: the
   interface takes the SoC's factory MAC (44:88:be:d4:c5:ee on the bring-up unit), identical across
   three consecutive boots; the 5x cold-boot check (ETH-04) was checked and confirmed by the owner.
+- **Forced password change at first login**: the image ships SSH enabled and the public default
+  password debian/temppwd, so the password is now expired in the image (`/etc/shadow` lastchg = 0, step 5d2 of
+  `assemble-image.sh`): the first console or SSH login must set a new password. Key logins are asked too and need a
+  tty (`ssh -t`); automation has to change the password once interactively (or set `user_password` in `sysconf.txt`).
 - **SSH on Ethernet from a config file on the SD card**: new `pb2-config.txt` on the FAT partition
   (`ssh=enabled|disabled`, `ssh_password_auth=yes|no`), applied at every boot by
   `pb2-boot-config.service` before `ssh.service`; default SSH enabled, as in the stock image.

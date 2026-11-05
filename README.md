@@ -92,8 +92,11 @@ balenaEtcher, Raspberry Pi Imager, `dd`, or any other raw-image writer.
 Default login is `debian` / `temppwd` (root disabled) — override it
 without rebuilding by editing `sysconf.txt` on the FAT boot partition
 before first boot (`user_password`, `user_authorized_key`, `hostname`), or
-via BeagleBoard's own Imaging Utility. Change the password (or use key
-login) before connecting a board to a network you do not control.
+via BeagleBoard's own Imaging Utility. The default password is a one-time
+password: it is expired in the image, so the first login (serial console or
+SSH) forces choosing a new one. Key logins get the same prompt and need a
+terminal for it (`ssh -t`); a script or `ssh host command` fails with
+"Password change required but no TTY available" until it was changed once.
 
 **SSH over Ethernet** is on by default and is switched by `pb2-config.txt`
 on the same FAT boot partition (`/boot/firmware/pb2-config.txt` on the

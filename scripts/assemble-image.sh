@@ -296,6 +296,23 @@ sudo touch "${rmnt}/etc/bbb.io/ssh_regenerate"
 sudo ls -la "${rmnt}/etc/systemd/system/multi-user.target.wants/" "${rmnt}/etc/bbb.io/ssh_regenerate"
 
 # ---------------------------------------------------------------------
+# 5d2. Force a password change at first login. The image ships the public
+#      default password debian/temppwd (shown in the login banner as a "one
+#      time password"), and SSH is enabled by default (5d), so the default
+#      must not stay usable: mark it expired (lastchg = 0, the same as
+#      "chage -d 0 debian"). The console getty and password SSH logins then
+#      require choosing a new password before anything else. Key logins
+#      are asked as well (PAM account check), but need a tty: use "ssh -t".
+#      Setting user_password in sysconf.txt replaces this password and
+#      its expiry, as before.
+# ---------------------------------------------------------------------
+log "Expiring the default debian password (forced change at first login)"
+sudo sed -i -E 's/^(debian:[^:]*:)[0-9]*:/\10:/' "${rmnt}/etc/shadow"
+sudo awk -F: '$1 == "debian" { ok = ($3 == 0 && $2 != "" && $2 !~ /^[!*]/) } END { exit !ok }' "${rmnt}/etc/shadow" \
+	|| { echo "error: debian password not marked expired in /etc/shadow" >&2; exit 1; }
+sudo awk -F: '$1 == "debian" { print "  debian: lastchg=" $3 ", hash present" }' "${rmnt}/etc/shadow"
+
+# ---------------------------------------------------------------------
 # 5e. Ethernet link down on power-off. Confirmed on real hardware: after
 #     "sudo poweroff" the DP83867 stays powered and keeps its link (RJ45
 #     LEDs on, switch port up) because nothing in the shutdown path closes

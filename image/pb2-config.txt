@@ -12,9 +12,10 @@
 # ssh - SSH server on all network interfaces, including the Ethernet port.
 #   enabled  (default; also used when the key or the whole file is missing)
 #   disabled (no SSH server at all)
-# Default login of this image: user "debian", password "temppwd". CHANGE IT
-# (or switch to key login, below) before connecting the board to a network
-# you do not control.
+# Default login of this image: user "debian", one-time password "temppwd".
+# The password is expired in the image, so the first login (serial console
+# or SSH) forces you to choose a new one. Key logins also get this prompt
+# on the first login, which needs a terminal: use "ssh -t user@host".
 ssh=enabled
 
 # ssh_password_auth - allow password logins over SSH.
