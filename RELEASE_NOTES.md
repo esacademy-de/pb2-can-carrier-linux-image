@@ -57,6 +57,15 @@ First bring-up on real hardware (2026-11-04/05) found and fixed:
   `assemble-image.sh` step 5f. Verified on hardware with the hook installed: after `sudo poweroff` everything turns off (including
   the carrier rails, USB and the PHY link) and the power button restarts the board. The root cause in the kernel path (why the
   PMIC request does not take effect there) was not found.
+- **`apt update` printed three "File not found - Packages.xz/.bz2/.lzma" errors** for `/opt/pb2-carrier-repo`, the throw-away
+  local repository the kernel .deb was installed from at build time. The image no longer contains it (`assemble-image.sh` step 5g);
+  the installed kernel package is unaffected.
+- **A stock kernel could have replaced the carrier kernel**: any other kernel package (BeagleBoard's `bbb.io-kernel-6.18-k3`,
+  Debian's `linux-image-arm64`) overwrites `/boot/firmware/Image.gz`, initrd and device trees through the `zz-uenv_txt` hook and
+  would drop the PHY patches. `image/pb2-apt-preferences` (installed as `/etc/apt/preferences.d/pb2-can-carrier-kernel`) pins
+  those packages to priority -1, so `apt install`/`full-upgrade` can no longer pull them in. Delete the file to go back to a stock
+  kernel on purpose. Checked in a QEMU chroot of the built image: `apt update` clean, both installs refused with "no installation
+  candidate", carrier kernel stays installed. Other packages (u-boot, tzdata, firmware, ...) still upgrade normally.
 - Checked and confirmed by the owner (2026-11-05): the ETH-04 cold-boot check, the card-reader
   hot-plug behaviour and the UART0 login.
 - CAN: all external PCAN-USB FD tests pass on all three ports (classic, FD/BRS, shared bus); RT-01 cyclictest max 112 us under load.
@@ -145,7 +154,8 @@ may be hidden"):
       `image-builder/rootstock-ng-carrier-hook.patch`), in place of the
       stock `bbb.io-kernel-6.18-k3`/`bbb.io-headers-6.18-k3` packages.
       Confirmed in the resulting rootfs's `dpkg-list.txt`: our kernel is
-      there, the stock one is not.
+      there, the stock one is not. The local repo only exists during the
+      build; `assemble-image.sh` step 5g removes it from the final image.
    3. Runs the real `beagleboard/image-builder` pipeline
       (`image-builder/pb2-can-carrier-debian-trixie-iot.conf`, a trimmed
       copy of BeagleBoard's own IoT config) — real debootstrap + chroot,

@@ -1,0 +1,29 @@
+# /etc/apt/preferences.d/pb2-can-carrier-kernel
+#
+# The PB2 CAN Carrier runs its own patched kernel (linux-image-*-arm64-k3-r*
+# "1xross": Ethernet PHY LED/RX-delay/MAC patches and the carrier overlay).
+# Installing ANY other kernel package runs /etc/kernel/postinst.d/zz-uenv_txt,
+# which overwrites /boot/firmware/Image.gz, initrd and the device trees, so a
+# stock kernel would silently replace ours at the next "apt install" or
+# "apt full-upgrade" (for example through the bbb.io-kernel-6.18-k3 meta
+# package of the BeagleBoard repository or Debian's linux-image-arm64).
+#
+# Priority -1 = never install from these archives. Our own kernel, which comes
+# from the carrier repository, is not affected. To go back to a stock kernel on
+# purpose, delete this file.
+
+Package: linux-image-* linux-headers-* linux-kbuild-* bbb.io-kernel-* bbb.io-headers-*
+Pin: origin debian.beagleboard.org
+Pin-Priority: -1
+
+Package: linux-image-* linux-headers-* linux-kbuild-* bbb.io-kernel-* bbb.io-headers-*
+Pin: origin rcn-ee.com
+Pin-Priority: -1
+
+Package: linux-image-* linux-headers-* linux-kbuild-* bbb.io-kernel-* bbb.io-headers-*
+Pin: origin deb.debian.org
+Pin-Priority: -1
+
+Package: linux-image-* linux-headers-* linux-kbuild-* bbb.io-kernel-* bbb.io-headers-*
+Pin: origin security.debian.org
+Pin-Priority: -1

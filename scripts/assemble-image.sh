@@ -346,6 +346,28 @@ sudo install -m 0755 "${here}/image/pb2-pmic-poweroff.shutdown" \
 	"${rmnt}/usr/lib/systemd/system-shutdown/pb2-pmic-poweroff.shutdown"
 sudo install -m 0644 "${here}/image/pb2-i2c-dev.conf" "${rmnt}/etc/modules-load.d/pb2-i2c-dev.conf"
 
+# ---------------------------------------------------------------------
+# 5g. apt: keep our kernel, drop the build-time local repository.
+#     (1) The kernel .deb reached the rootfs through a throw-away local repo
+#         (/opt/pb2-carrier-repo, only a Packages.gz). It is of no use on the
+#         running system and makes every "apt update" print three harmless
+#         "File not found - Packages.xz/.bz2/.lzma" errors, so it is removed;
+#         the installed kernel package stays.
+#     (2) Any other kernel package (BeagleBoard's bbb.io-kernel-*, Debian's
+#         linux-image-arm64) would overwrite the carrier kernel in
+#         /boot/firmware through the zz-uenv_txt hook; image/pb2-apt-preferences
+#         pins them to "never install".
+# ---------------------------------------------------------------------
+log "apt: removing the build-time local repository, pinning other kernels out"
+sudo rm -f "${rmnt}/etc/apt/sources.list.d/repo_external.list"
+sudo rm -rf "${rmnt}/opt/pb2-carrier-repo"
+sudo install -m 0644 "${here}/image/pb2-apt-preferences" "${rmnt}/etc/apt/preferences.d/pb2-can-carrier-kernel"
+if sudo grep -rq pb2-carrier-repo "${rmnt}/etc/apt/"; then
+	echo "error: a reference to the local carrier repo is left in /etc/apt" >&2; exit 1
+fi
+sudo grep -q '^Pin-Priority: -1' "${rmnt}/etc/apt/preferences.d/pb2-can-carrier-kernel" \
+	|| { echo "error: kernel pin not installed" >&2; exit 1; }
+
 sync
 sudo umount "${rmnt}"
 sudo losetup -d "${rloopdev}"
