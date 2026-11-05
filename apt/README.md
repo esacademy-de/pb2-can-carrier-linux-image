@@ -29,11 +29,15 @@ this is all it takes to get updates:
 
 A board with an older image gets the repository once, by hand:
 
-    sudo curl -fsSLo /usr/share/keyrings/pb2-can-carrier-archive-keyring.gpg \
-        https://esacademy-de.github.io/pb2-can-carrier-linux-image/pb2-can-carrier-archive-keyring.gpg
-    printf 'Types: deb\nURIs: https://esacademy-de.github.io/pb2-can-carrier-linux-image/\nSuites: ./\nSigned-By: /usr/share/keyrings/pb2-can-carrier-archive-keyring.gpg\n' \
-        | sudo tee /etc/apt/sources.list.d/pb2-can-carrier.sources
+    url=https://esacademy-de.github.io/pb2-can-carrier-linux-image
+    sudo curl -fsSLo /usr/share/keyrings/pb2-can-carrier-archive-keyring.gpg $url/pb2-can-carrier-archive-keyring.gpg
+    sudo curl -fsSLo /etc/apt/sources.list.d/pb2-can-carrier.sources $url/pb2-can-carrier.sources
     sudo apt update && sudo apt install pb2-can-carrier-support
+
+The downloaded source file is the one the package ships, so installing the
+package does not ask about configuration files. The package also removes the
+dead `/opt/pb2-carrier-repo` entry of older images, which made every
+`apt update` print three "File not found" errors.
 
 (Check the key against the fingerprint in `apt/pb2-can-carrier-archive-key.asc`:
 `37874330451F08C42026287FFB5DDB0E44975DDF`.)

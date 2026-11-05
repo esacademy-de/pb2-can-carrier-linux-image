@@ -15,6 +15,13 @@ configure)
 			rm -f "/etc/systemd/system/$u"
 		fi
 	done
+	# ... and the build-time local repository (only a Packages.gz, so every
+	# "apt update" printed three harmless "File not found" errors). The kernel
+	# package it installed from stays installed.
+	if grep -qs 'file:/opt/pb2-carrier-repo' /etc/apt/sources.list.d/repo_external.list; then
+		rm -f /etc/apt/sources.list.d/repo_external.list
+		rm -rf /opt/pb2-carrier-repo
+	fi
 	find /etc/systemd/system -maxdepth 2 -type l \
 		\( -name pb2-boot-config.service -o -name pb2-eth-linkdown.service \) \
 		-lname '/etc/systemd/system/*' -delete 2>/dev/null || true
