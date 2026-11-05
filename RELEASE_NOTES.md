@@ -69,6 +69,12 @@ First bring-up on real hardware (2026-11-04/05) found and fixed:
   first image add the repository once by hand (`apt/README.md`). The unit files moved to `/usr/lib/systemd/system` and the
   script to `/usr/sbin/pb2-boot-config`; installing the package removes the old copies. Tested in a QEMU chroot of the built
   image: install over the unpackaged files, `apt update` with signature check, upgrade 1.0.900 -> 1.0.901, purge.
+- **Kernel updates through the repository**: `.github/workflows/build-kernel.yml` builds the carrier kernel as a package
+  (`scripts/build-image.sh` with `PB2_KERNEL_ONLY=1` prepares the patched, configured tree, `scripts/build-kernel-deb.sh`
+  compiles and packages it once) and the meta package `pb2-can-carrier-kernel` (`scripts/build-kernel-meta-deb.sh`), attaches
+  both to the release `apt-pool` and starts `publish-apt`. The kernel package version is `1xross<N>` (N = commits touching the
+  kernel inputs, `scripts/kernel-version.sh`), so it is the same for a local image build and for CI and sorts above the
+  `1xross` of the first image. `assemble-image.sh` uses the same scripts and installs the meta package into the image.
 - **A stock kernel could have replaced the carrier kernel**: any other kernel package (BeagleBoard's `bbb.io-kernel-6.18-k3`,
   Debian's `linux-image-arm64`) overwrites `/boot/firmware/Image.gz`, initrd and device trees through the `zz-uenv_txt` hook and
   would drop the PHY patches. `image/pb2-apt-preferences` (installed as `/etc/apt/preferences.d/pb2-can-carrier-kernel`) pins

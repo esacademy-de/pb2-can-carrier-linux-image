@@ -1,0 +1,113 @@
+name: Build kernel
+
+# Builds the patched PREEMPT_RT carrier kernel as a Debian package, together with
+# the pb2-can-carrier-kernel meta package, attaches both to the GitHub release
+# "apt-pool" and (default) runs publish-apt, which puts them into the signed
+# apt repository. Boards get the kernel with "sudo apt update && sudo apt upgrade".
+#
+# Started by hand (Actions -> Build kernel -> Run workflow) or by pushing a tag
+# named kernel-* (git tag kernel-2026-11-05 && git push origin kernel-2026-11-05;
+# a tag push always publishes). A kernel build takes well over an hour. The package version
+# (1xross<N>) counts the commits that touched the kernel inputs (patches/,
+# configs/kernel.fragment, manifests/sources.lock, scripts/build-image.sh,
+# scripts/build-kernel-deb.sh), so it increases exactly when the kernel changes.
+
+on:
+  push:
+    tags: ["kernel-*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish into the apt repository afterwards"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # create the release / upload assets
+  actions: write    # start publish-apt
+
+concurrency:
+  group: build-kernel
+  cancel-in-progress: false
+
+jobs:
+  kernel:
+    # not ubuntu-latest: the toolchain must match what the kernel was validated with
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: "Check out repository (full history, the version counts commits)"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reclaim runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift || true
+          df -h /
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential crossbuild-essential-arm64 bc bison flex libssl-dev libelf-dev \
+            libdw-dev libmpc-dev gettext zstd xz-utils lz4 kmod cpio rsync fakeroot \
+            debhelper dpkg-dev device-tree-compiler u-boot-tools python3 git ca-certificates
+
+      - name: Check the version
+        run: echo "kernel package version $(bash scripts/kernel-version.sh)"
+
+      - name: Fetch the kernel, apply the recipe and carrier patches, configure
+        env:
+          PB2_BUILD_DIR: ${{ runner.temp }}/pb2-build
+          PB2_KERNEL_ONLY: "1"
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@localhost
+          bash scripts/build-image.sh
+          df -h /
+
+      - name: Compile and package the kernel
+        env:
+          PB2_BUILD_DIR: ${{ runner.temp }}/pb2-build
+        run: |
+          bash scripts/build-kernel-deb.sh "$PB2_BUILD_DIR/kernel-build/KERNEL" "$RUNNER_TEMP/kernel-out"
+          kdeb=$(ls "$RUNNER_TEMP"/kernel-out/linux-image-*.deb)
+          bash scripts/build-kernel-meta-deb.sh "$kdeb" "$RUNNER_TEMP/kernel-out"
+          ls -la "$RUNNER_TEMP/kernel-out"
+          dpkg-deb -I "$kdeb" | head -12
+          # sanity: the carrier PHY patch is in the kernel
+          dpkg-deb -x "$kdeb" "$RUNNER_TEMP/kx"
+          zcat "$RUNNER_TEMP"/kx/boot/vmlinuz-* | grep -c 'ti,led-function'
+
+      - name: Keep the packages as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-packages
+          path: |
+            ${{ runner.temp }}/kernel-out/linux-image-*.deb
+            ${{ runner.temp }}/kernel-out/pb2-can-carrier-kernel_*.deb
+          retention-days: 14
+
+      - name: Attach to the release apt-pool
+        if: ${{ github.event_name == 'push' || inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view apt-pool >/dev/null 2>&1 || gh release create apt-pool \
+            --title "apt pool" \
+            --notes "Large packages for the apt repository (kernel packages). Built by the build-kernel workflow; the publish-apt workflow indexes and signs them." \
+            --latest=false
+          gh release upload apt-pool "$RUNNER_TEMP"/kernel-out/linux-image-*.deb "$RUNNER_TEMP"/kernel-out/pb2-can-carrier-kernel_*.deb --clobber
+          # keep the newest 3 kernel packages and meta packages in the release
+          for prefix in linux-image- pb2-can-carrier-kernel_; do
+            gh release view apt-pool --json assets --jq ".assets[].name" | grep "^$prefix" | sort -V | head -n -3 \
+              | while read -r old; do echo "removing old asset $old"; gh release delete-asset apt-pool "$old" --yes; done
+          done
+
+      - name: Publish the apt repository
+        if: ${{ github.event_name == 'push' || inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run publish-apt.yml --ref master

@@ -62,11 +62,19 @@ sed -i "s/^\t\tdir 'backports\/imagination'/\t\t# dir 'backports\/imagination' #
 	"${kdir}/patch.sh"
 grep -q "# dir 'backports/imagination'" "${kdir}/patch.sh"
 
+# PB2_KERNEL_ONLY=1 (CI): stop after the carrier patches and config. The recipe
+# would compile the whole kernel here, and again after the config fragment is
+# merged; scripts/build-kernel-deb.sh then compiles it once, as a package.
 cat > "${kdir}/system.sh" <<-EOF
 	CC=aarch64-linux-gnu-
 	CORES=$(nproc)
 	AUTO_BUILD=1
 EOF
+if [ -n "${PB2_KERNEL_ONLY:-}" ]; then
+	echo 'AUTO_BUILD_DONT_PKG=1' >> "${kdir}/system.sh"
+	sed -i 's/^make_kernel$/true # PB2_KERNEL_ONLY: compiled by scripts\/build-kernel-deb.sh/' "${kdir}/build_kernel.sh"
+	grep -q '^true # PB2_KERNEL_ONLY' "${kdir}/build_kernel.sh"
+fi
 
 log "Kernel: fetching + applying recipe's own K3/RT patch series (first run only)"
 if [ ! -d "${kdir}/KERNEL" ]; then
@@ -81,6 +89,12 @@ log "Kernel: merging carrier config fragment"
 ( cd "${kernel_src}" && \
   ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
   scripts/kconfig/merge_config.sh -m .config "${here}/configs/kernel.fragment" )
+
+if [ -n "${PB2_KERNEL_ONLY:-}" ]; then
+	( cd "${kernel_src}" && make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig )
+	log "Kernel: patched and configured (PB2_KERNEL_ONLY), stopping here"
+	exit 0
+fi
 
 log "Kernel: dt_binding_check / dtbs_check for the modified CAN-transceiver-PHY binding"
 ( cd "${kernel_src}" && \

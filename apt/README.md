@@ -51,7 +51,7 @@ everything it finds in
 * `packages/` in this repository (small packages: `*.deb`, or source packages
   as `*.dsc` + the files it lists), and
 * the assets of the GitHub release tagged `apt-pool` (large files such as
-  kernel packages),
+  kernel packages; the kernel is put there by the `build-kernel` workflow),
 
 indexes them (`Packages`, `Sources`), signs `Release` with the key held in the
 repository secret `APT_SIGNING_KEY` and publishes the result. Only the newest 3
@@ -60,6 +60,22 @@ Packages must have a higher version than the one they replace.
 
 The workflow runs on pushes to `master` that touch these inputs, and by hand
 (Actions tab → publish-apt → Run workflow).
+
+## Kernel updates
+
+`.github/workflows/build-kernel.yml` builds the patched PREEMPT_RT kernel
+(`linux-image-6.18.37-arm64-k3-r56`, version `1xross<N>`, N counts the commits
+that touched the kernel inputs) and the meta package `pb2-can-carrier-kernel`,
+which depends on exactly that kernel, attaches both to the release `apt-pool`
+and starts `publish-apt`. Start it with Actions -> Build kernel -> Run workflow,
+or by pushing a tag named `kernel-*`:
+
+    git tag kernel-2026-11-05 && git push origin kernel-2026-11-05
+
+It takes well over an hour. On the board, `sudo apt update && sudo apt upgrade`
+installs the new kernel (the `zz-uenv_txt` hook copies it to `/boot/firmware`);
+reboot afterwards. Images built from this repository have the meta package
+installed; on an older board, `sudo apt install pb2-can-carrier-kernel` once.
 
 ## Source packages
 

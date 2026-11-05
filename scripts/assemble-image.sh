@@ -40,18 +40,7 @@ fi
 # 1. Package our patched, configured kernel as a real .deb.
 # ---------------------------------------------------------------------
 log "Kernel: building .deb package (make bindeb-pkg)"
-( cd "${kernel_src}" && \
-  make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-    KBUILD_DEBARCH=arm64 \
-    LOCALVERSION=-arm64-k3-r56 \
-    KDEB_PKGVERSION=1xross \
-    KDEB_SOURCENAME=linux-upstream \
-    KDEB_COMPRESS=xz \
-    DEB_BUILD_PROFILES=pkg.linux-upstream.nokernelheaders \
-    bindeb-pkg )
-mkdir -p "${kdir}/deploy"
-mv "${kdir}"/*.deb "${kdir}"/*.buildinfo "${kdir}"/*.changes "${kdir}/deploy/" 2>/dev/null || true
-ls "${kdir}/deploy/"linux-image-*.deb >/dev/null
+bash "${here}/scripts/build-kernel-deb.sh" "${kernel_src}" "${kdir}/deploy"
 
 # ---------------------------------------------------------------------
 # 2. Clone + patch beagleboard/image-builder at the pinned commit.
@@ -337,11 +326,15 @@ support_dir="$(mktemp -d)"
 support_version="$(bash "${here}/scripts/support-version.sh")"
 bash "${here}/scripts/build-support-deb.sh" "${support_version}" "${support_dir}" \
 	"${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo"
-sudo cp "${support_dir}"/pb2-can-carrier-support_*.deb "${rmnt}/tmp/"
+# pb2-can-carrier-kernel: meta package that follows the carrier kernel, so that
+# "apt upgrade" on the board installs kernel updates of the package repository.
+kernel_deb="$(find "${kdir}/deploy" -name 'linux-image-*.deb' | sort -V | tail -n 1)"
+bash "${here}/scripts/build-kernel-meta-deb.sh" "${kernel_deb}" "${support_dir}"
+sudo cp "${support_dir}"/pb2-can-carrier-*.deb "${rmnt}/tmp/"
 sudo mount -t proc proc "${rmnt}/proc"
-sudo chroot "${rmnt}" /bin/sh -c 'dpkg -i /tmp/pb2-can-carrier-support_*.deb'
+sudo chroot "${rmnt}" /bin/sh -c 'dpkg -i /tmp/pb2-can-carrier-support_*.deb /tmp/pb2-can-carrier-kernel_*.deb'
 sudo umount "${rmnt}/proc"
-sudo rm -f "${rmnt}"/tmp/pb2-can-carrier-support_*.deb
+sudo rm -f "${rmnt}"/tmp/pb2-can-carrier-*.deb
 rm -rf "${support_dir}"
 for want in multi-user.target.wants/pb2-boot-config.service \
 	poweroff.target.wants/pb2-eth-linkdown.service halt.target.wants/pb2-eth-linkdown.service; do
