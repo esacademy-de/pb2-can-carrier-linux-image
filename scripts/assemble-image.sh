@@ -284,11 +284,7 @@ sudo rm -f "${rmnt}/etc/systemd/system/multi-user.target.wants/bb-usb-gadgets.se
 #     /etc/bbb.io/ssh_regenerate exists (it then reboots once); that flag
 #     is not set by default, so set it here.
 # ---------------------------------------------------------------------
-log "Installing pb2-boot-config (SSH switch from the SD card) and arming host key regeneration"
-sudo install -m 0755 "${here}/image/pb2-boot-config.sh" "${rmnt}/usr/local/sbin/pb2-boot-config"
-sudo install -m 0644 "${here}/image/pb2-boot-config.service" "${rmnt}/etc/systemd/system/pb2-boot-config.service"
-sudo ln -sf /etc/systemd/system/pb2-boot-config.service \
-	"${rmnt}/etc/systemd/system/multi-user.target.wants/pb2-boot-config.service"
+log "Enabling ssh.service and arming host key regeneration (pb2-boot-config itself comes with the support package, step 5e)"
 sudo ln -sf /usr/lib/systemd/system/ssh.service \
 	"${rmnt}/etc/systemd/system/multi-user.target.wants/ssh.service"
 sudo mkdir -p "${rmnt}/etc/bbb.io"
@@ -313,60 +309,69 @@ sudo awk -F: '$1 == "debian" { ok = ($3 == 0 && $2 != "" && $2 !~ /^[!*]/) } END
 sudo awk -F: '$1 == "debian" { print "  debian: lastchg=" $3 ", hash present" }' "${rmnt}/etc/shadow"
 
 # ---------------------------------------------------------------------
-# 5e. Ethernet link down on power-off. Confirmed on real hardware: after
-#     "sudo poweroff" the DP83867 stays powered and keeps its link (RJ45
-#     LEDs on, switch port up) because nothing in the shutdown path closes
-#     eth0; "ip link set eth0 down" does power the PHY down (kernel
-#     phy_detach -> phy_suspend). pb2-eth-linkdown.service does that late in
-#     poweroff/halt (not reboot), after systemd-networkd has stopped.
+# 5e. Carrier support package (pb2-can-carrier-support). One .deb carries
+#     everything carrier-specific that lives in the root filesystem, so that a
+#     freshly flashed card and a board updated with "apt upgrade" are the same:
+#       - pb2-boot-config + unit (SD-card pb2-config.txt: SSH switch), see 5d
+#       - pb2-eth-linkdown.service: Ethernet link down on power-off. Confirmed
+#         on hardware: nothing in the power-off path closes the interface, so
+#         the DP83867 PHY keeps its link (RJ45 LEDs on, switch port up).
+#       - pb2-pmic-poweroff shutdown hook + i2c-dev autoload. Confirmed on
+#         hardware: the kernel's power-off path (tps65219 handler, PSCI
+#         SYSTEM_OFF) leaves the PMIC running (SoC parked, power LED lit, USB
+#         VBUS and PHY powered, power button dead); the same I2C_OFF_REQ sent
+#         from userspace switches everything off and the button restarts the
+#         board. Runs after services stop and filesystems unmount; poweroff
+#         only, and if the PMIC does not react the kernel power-off continues.
+#       - the carrier overlay (also copied to the boot partition above)
+#       - apt pin: no other kernel package may replace the carrier kernel
+#         (any kernel install overwrites /boot/firmware/Image.gz through the
+#         zz-uenv_txt hook, and a stock kernel lacks the PHY patches)
+#       - the signed package repository (source list + key), the channel for
+#         kernel and support updates (apt/README.md)
+#     The package is built here from the same files; its postinst enables the
+#     units. It is installed with dpkg in the (QEMU-emulated) arm64 rootfs.
 # ---------------------------------------------------------------------
-log "Installing pb2-eth-linkdown.service (Ethernet link down on power-off/halt)"
-sudo install -m 0644 "${here}/image/pb2-eth-linkdown.service" "${rmnt}/etc/systemd/system/pb2-eth-linkdown.service"
-for tgt in poweroff halt; do
-	sudo mkdir -p "${rmnt}/etc/systemd/system/${tgt}.target.wants"
-	sudo ln -sf /etc/systemd/system/pb2-eth-linkdown.service \
-		"${rmnt}/etc/systemd/system/${tgt}.target.wants/pb2-eth-linkdown.service"
+log "Installing pb2-can-carrier-support (carrier units, hooks, overlay, apt pin, package repository)"
+support_dir="$(mktemp -d)"
+support_version="$(bash "${here}/scripts/support-version.sh")"
+bash "${here}/scripts/build-support-deb.sh" "${support_version}" "${support_dir}" \
+	"${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo"
+sudo cp "${support_dir}"/pb2-can-carrier-support_*.deb "${rmnt}/tmp/"
+sudo mount -t proc proc "${rmnt}/proc"
+sudo chroot "${rmnt}" /bin/sh -c 'dpkg -i /tmp/pb2-can-carrier-support_*.deb'
+sudo umount "${rmnt}/proc"
+sudo rm -f "${rmnt}"/tmp/pb2-can-carrier-support_*.deb
+rm -rf "${support_dir}"
+for want in multi-user.target.wants/pb2-boot-config.service \
+	poweroff.target.wants/pb2-eth-linkdown.service halt.target.wants/pb2-eth-linkdown.service; do
+	sudo test -L "${rmnt}/etc/systemd/system/${want}" \
+		|| { echo "error: ${want} is not enabled" >&2; exit 1; }
 done
+sudo test -x "${rmnt}/usr/lib/systemd/system-shutdown/pb2-pmic-poweroff.shutdown" \
+	|| { echo "error: PMIC power-off hook missing" >&2; exit 1; }
+sudo test -f "${rmnt}/etc/modules-load.d/pb2-i2c-dev.conf" \
+	|| { echo "error: i2c-dev autoload missing" >&2; exit 1; }
 
 # ---------------------------------------------------------------------
-# 5f. Real power-off. Confirmed on real hardware: after "sudo poweroff" the
-#     kernel (tps65219 power-off handler, then PSCI SYSTEM_OFF) leaves the PMIC
-#     running -- the SoC is parked, the red power LED stays lit, USB VBUS and
-#     the Ethernet PHY stay powered and the power button does nothing. The
-#     same I2C_OFF_REQ sent from userspace switches the PMIC off properly
-#     (all rails off, power button restarts the board).
-#     pb2-pmic-poweroff.shutdown sends it as a systemd-shutdown hook, i.e.
-#     after services are stopped and filesystems unmounted; i2c-dev provides
-#     /dev/i2c-N. poweroff only (not halt/reboot); if the PMIC does not react
-#     the normal kernel power-off continues.
+# 5g. apt: drop the build-time local repository. The kernel .deb reached the
+#     rootfs through a throw-away local repo (/opt/pb2-carrier-repo, only a
+#     Packages.gz); on the running system it is useless and made every
+#     "apt update" print three harmless "File not found - Packages.xz/.bz2/
+#     .lzma" errors. The installed kernel package stays. (The kernel pin and
+#     the package repository come with pb2-can-carrier-support.)
 # ---------------------------------------------------------------------
-log "Installing pb2-pmic-poweroff (real power-off via the PMIC) and i2c-dev autoload"
-sudo mkdir -p "${rmnt}/usr/lib/systemd/system-shutdown" "${rmnt}/etc/modules-load.d"
-sudo install -m 0755 "${here}/image/pb2-pmic-poweroff.shutdown" \
-	"${rmnt}/usr/lib/systemd/system-shutdown/pb2-pmic-poweroff.shutdown"
-sudo install -m 0644 "${here}/image/pb2-i2c-dev.conf" "${rmnt}/etc/modules-load.d/pb2-i2c-dev.conf"
-
-# ---------------------------------------------------------------------
-# 5g. apt: keep our kernel, drop the build-time local repository.
-#     (1) The kernel .deb reached the rootfs through a throw-away local repo
-#         (/opt/pb2-carrier-repo, only a Packages.gz). It is of no use on the
-#         running system and makes every "apt update" print three harmless
-#         "File not found - Packages.xz/.bz2/.lzma" errors, so it is removed;
-#         the installed kernel package stays.
-#     (2) Any other kernel package (BeagleBoard's bbb.io-kernel-*, Debian's
-#         linux-image-arm64) would overwrite the carrier kernel in
-#         /boot/firmware through the zz-uenv_txt hook; image/pb2-apt-preferences
-#         pins them to "never install".
-# ---------------------------------------------------------------------
-log "apt: removing the build-time local repository, pinning other kernels out"
+log "apt: removing the build-time local repository"
 sudo rm -f "${rmnt}/etc/apt/sources.list.d/repo_external.list"
 sudo rm -rf "${rmnt}/opt/pb2-carrier-repo"
-sudo install -m 0644 "${here}/image/pb2-apt-preferences" "${rmnt}/etc/apt/preferences.d/pb2-can-carrier-kernel"
 if sudo grep -rq pb2-carrier-repo "${rmnt}/etc/apt/"; then
 	echo "error: a reference to the local carrier repo is left in /etc/apt" >&2; exit 1
 fi
 sudo grep -q '^Pin-Priority: -1' "${rmnt}/etc/apt/preferences.d/pb2-can-carrier-kernel" \
 	|| { echo "error: kernel pin not installed" >&2; exit 1; }
+sudo grep -q '^URIs: https://esacademy-de.github.io/pb2-can-carrier-linux-image/' \
+	"${rmnt}/etc/apt/sources.list.d/pb2-can-carrier.sources" \
+	|| { echo "error: package repository not configured" >&2; exit 1; }
 
 sync
 sudo umount "${rmnt}"

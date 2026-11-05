@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+UNITS="pb2-boot-config.service pb2-eth-linkdown.service"
+
+case "$1" in
+remove|purge)
+	for u in $UNITS; do
+		deb-systemd-helper purge "$u" >/dev/null || true
+		deb-systemd-helper unmask "$u" >/dev/null || true
+	done
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload || true
+	fi
+	;;
+esac
+
+exit 0

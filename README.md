@@ -39,6 +39,8 @@ image/package-list.txt              rootfs package list
 image/pb2-config.txt                user-editable config on the SD card's FAT partition (SSH on/off, password logins)
 image/pb2-boot-config.{sh,service}  applies that file at every boot (installed by assemble-image.sh)
 image/pb2-apt-preferences           apt pin: no other kernel package (BeagleBoard/Debian) may replace the carrier kernel
+apt/, packages/, scripts/make-apt-repo.sh, scripts/build-support-deb.sh, .github/workflows/publish-apt.yml
+                                     signed apt repository on GitHub Pages and the pb2-can-carrier-support package (apt/README.md)
 image-builder/                      beagleboard/image-builder integration (patch, config, hook script) + real findings
 scripts/build-image.sh              kernel + device-tree overlay build/validate entry point
 scripts/assemble-image.sh           full pipeline: kernel .deb -> image-builder -> flashable .img

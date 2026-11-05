@@ -1,6 +1,6 @@
 [Unit]
 Description=PB2 CAN Carrier: take the Ethernet link down on power-off
-Documentation=file:///usr/share/doc/pb2-can-carrier/README
+Documentation=file:///usr/share/doc/pb2-can-carrier-support/README.md
 # Nothing in the power-off path closes the network interface, so the DP83867
 # PHY stays powered and keeps its link (RJ45 LEDs on, the switch port stays up)
 # after "poweroff". Taking eth0 down makes the kernel power the PHY down

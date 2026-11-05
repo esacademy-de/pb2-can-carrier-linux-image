@@ -8,7 +8,7 @@ Before=ssh.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/pb2-boot-config
+ExecStart=/usr/sbin/pb2-boot-config
 RemainAfterExit=yes
 
 [Install]

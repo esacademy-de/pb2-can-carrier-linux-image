@@ -60,6 +60,15 @@ First bring-up on real hardware (2026-11-04/05) found and fixed:
 - **`apt update` printed three "File not found - Packages.xz/.bz2/.lzma" errors** for `/opt/pb2-carrier-repo`, the throw-away
   local repository the kernel .deb was installed from at build time. The image no longer contains it (`assemble-image.sh` step 5g);
   the installed kernel package is unaffected.
+- **Updates are delivered through a signed apt repository** (`https://esacademy-de.github.io/pb2-can-carrier-linux-image/`,
+  built and signed by the `publish-apt` workflow, see `apt/README.md`). A new package `pb2-can-carrier-support` contains
+  everything carrier-specific in the root filesystem (carrier overlay, `pb2-boot-config` + unit, Ethernet link-down unit, PMIC
+  power-off hook, `i2c-dev` autoload, the kernel pin, the repository source line and key). `assemble-image.sh` now installs this
+  package instead of copying the files (step 5e), so a new image and an `apt upgrade`d board are identical. The same repository
+  carries kernel updates and further applications and source packages (`packages/`, release `apt-pool`). Boards running the
+  first image add the repository once by hand (`apt/README.md`). The unit files moved to `/usr/lib/systemd/system` and the
+  script to `/usr/sbin/pb2-boot-config`; installing the package removes the old copies. Tested in a QEMU chroot of the built
+  image: install over the unpackaged files, `apt update` with signature check, upgrade 1.0.900 -> 1.0.901, purge.
 - **A stock kernel could have replaced the carrier kernel**: any other kernel package (BeagleBoard's `bbb.io-kernel-6.18-k3`,
   Debian's `linux-image-arm64`) overwrites `/boot/firmware/Image.gz`, initrd and device trees through the `zz-uenv_txt` hook and
   would drop the PHY patches. `image/pb2-apt-preferences` (installed as `/etc/apt/preferences.d/pb2-can-carrier-kernel`) pins

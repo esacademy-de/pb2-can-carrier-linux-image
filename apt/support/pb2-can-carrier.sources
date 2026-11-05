@@ -1,0 +1,9 @@
+# PB2 CAN Carrier package repository (signed). Delivers the carrier kernel
+# updates and the pb2-can-carrier-support package, plus further packages.
+# The repository is a static website; the key it is signed with is
+# /usr/share/keyrings/pb2-can-carrier-archive-keyring.gpg (shipped by
+# pb2-can-carrier-support). Add "deb-src" to Types to also list source packages.
+Types: deb
+URIs: https://esacademy-de.github.io/pb2-can-carrier-linux-image/
+Suites: ./
+Signed-By: /usr/share/keyrings/pb2-can-carrier-archive-keyring.gpg

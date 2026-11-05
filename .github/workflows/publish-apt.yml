@@ -1,0 +1,102 @@
+name: Publish apt repository
+
+# Builds pb2-can-carrier-support, adds every other package (packages/ in this
+# repository, assets of the release tagged "apt-pool"), signs the repository
+# with the key in the secret APT_SIGNING_KEY and publishes it with GitHub Pages:
+#   https://esacademy-de.github.io/pb2-can-carrier-linux-image/
+# One-time setup: Settings -> Pages -> Source: "GitHub Actions", and the
+# repository secret APT_SIGNING_KEY (see apt/README.md).
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - apt/**
+      - image/**
+      - dts/**
+      - packages/**
+      - scripts/build-support-deb.sh
+      - scripts/build-overlay.sh
+      - scripts/make-apt-repo.sh
+      - scripts/support-version.sh
+      - manifests/sources.lock
+      - .github/workflows/publish-apt.yml
+  workflow_dispatch: {}
+
+# one publish at a time; the newest run wins
+concurrency:
+  group: publish-apt
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository (full history: the package version counts commits)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            device-tree-compiler apt-utils dpkg-dev gnupg xz-utils shellcheck
+
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh
+
+      - name: Check the signing secret is present
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          [ -n "$APT_SIGNING_KEY" ] || { echo "::error::repository secret APT_SIGNING_KEY is not set (see apt/README.md)"; exit 1; }
+
+      - name: Build the carrier overlay
+        run: bash scripts/build-overlay.sh "$RUNNER_TEMP/overlay" "$RUNNER_TEMP/overlay-work"
+
+      - name: Collect packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p pool
+          version=$(bash scripts/support-version.sh)
+          echo "pb2-can-carrier-support $version"
+          bash scripts/build-support-deb.sh "$version" pool "$RUNNER_TEMP/overlay/k3-am62-pocketbeagle2-can-carrier.dtbo"
+          # small packages kept in the repository
+          find packages -maxdepth 2 \( -name '*.deb' -o -name '*.dsc' -o -name '*.tar.*' -o -name '*.diff.gz' -o -name '*.changes' \) \
+            -exec cp -v {} pool/ \; 2>/dev/null || true
+          # large packages (kernel, ...) attached to the release "apt-pool"
+          if gh release view apt-pool >/dev/null 2>&1; then
+            gh release download apt-pool --dir pool --clobber || echo "release 'apt-pool' has no assets"
+          else
+            echo "no release 'apt-pool' yet"
+          fi
+          ls -la pool
+
+      - name: Index and sign
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: bash scripts/make-apt-repo.sh pool site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

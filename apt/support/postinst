@@ -1,0 +1,46 @@
+#!/bin/sh
+# pb2-can-carrier-support: enable the carrier units, install the overlay.
+set -e
+
+UNITS="pb2-boot-config.service pb2-eth-linkdown.service"
+OVERLAY=k3-am62-pocketbeagle2-can-carrier.dtbo
+
+case "$1" in
+configure)
+	# Images built before this package existed carried copies of these files
+	# outside any package; they would shadow the packaged ones.
+	rm -f /usr/local/sbin/pb2-boot-config
+	for u in $UNITS; do
+		if [ -f "/etc/systemd/system/$u" ] && [ ! -L "/etc/systemd/system/$u" ]; then
+			rm -f "/etc/systemd/system/$u"
+		fi
+	done
+	find /etc/systemd/system -maxdepth 2 -type l \
+		\( -name pb2-boot-config.service -o -name pb2-eth-linkdown.service \) \
+		-lname '/etc/systemd/system/*' -delete 2>/dev/null || true
+
+	for u in $UNITS; do
+		deb-systemd-helper unmask "$u" >/dev/null || true
+		if deb-systemd-helper --quiet was-enabled "$u"; then
+			deb-systemd-helper enable "$u" >/dev/null || true
+		else
+			deb-systemd-helper update-state "$u" >/dev/null || true
+		fi
+	done
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload || true
+	fi
+
+	# The overlay is applied by U-Boot from the SD card's FAT partition.
+	if [ -d /boot/firmware/overlays ]; then
+		src="/usr/share/pb2-can-carrier/overlays/$OVERLAY"
+		dst="/boot/firmware/overlays/$OVERLAY"
+		if ! cmp -s "$src" "$dst"; then
+			cp "$src" "$dst"
+			echo "pb2-can-carrier-support: updated $dst (takes effect at the next boot)"
+		fi
+	fi
+	;;
+esac
+
+exit 0
