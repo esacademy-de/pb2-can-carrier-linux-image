@@ -58,9 +58,11 @@ grep -q 'kernel_rt=".37-rt6"' "${kdir}/version.sh"
 # See manifests/sources.lock [kernel.base] for why: this recipe's own
 # "imagination" (Imagination PowerVR GPU) backport doesn't apply to
 # 6.18.37 and isn't relevant to AM625/PocketBeagle 2 (no such GPU here).
-sed -i "s/^\t\tdir 'backports\/imagination'/\t\t# dir 'backports\/imagination' # skipped: see manifests\/sources.lock [kernel.base]/" \
+# The line sits alone in an else branch, which needs a command: add "true".
+sed -i "s/^\t\tdir 'backports\/imagination'/\t\t# dir 'backports\/imagination' # skipped: see manifests\/sources.lock [kernel.base]\n\t\ttrue/" \
 	"${kdir}/patch.sh"
 grep -q "# dir 'backports/imagination'" "${kdir}/patch.sh"
+bash -n "${kdir}/patch.sh"
 
 # PB2_KERNEL_ONLY=1 (CI): stop after the carrier patches and config. The recipe
 # would compile the whole kernel here, and again after the config fragment is
