@@ -74,7 +74,8 @@ gpg --batch --yes --pinentry-mode loopback --passphrase '' --default-key "${fpr}
 gpg --batch --yes --pinentry-mode loopback --passphrase '' --default-key "${fpr}" --armor --detach-sign -o Release.gpg Release
 
 # the published key and a landing page
-cp "${here}/apt/pb2-can-carrier-archive-key.asc" "${here}/apt/pb2-can-carrier-archive-keyring.gpg" \n	"${here}/apt/support/pb2-can-carrier.sources" .
+cp "${here}/apt/pb2-can-carrier-archive-key.asc" "${here}/apt/pb2-can-carrier-archive-keyring.gpg" \
+	"${here}/apt/support/pb2-can-carrier.sources" .
 # the key the packages are installed with must be the key that signed
 gpg --batch --quiet --no-default-keyring --keyring ./pb2-can-carrier-archive-keyring.gpg --verify InRelease 2>/dev/null \
 	|| { echo "error: InRelease is not signed by apt/pb2-can-carrier-archive-keyring.gpg" >&2; exit 1; }
