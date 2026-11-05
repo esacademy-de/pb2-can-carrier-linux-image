@@ -35,7 +35,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository (full history: the package version counts commits)
+      - name: "Check out repository (full history, the package version counts commits)"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
