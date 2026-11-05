@@ -311,6 +311,24 @@ for tgt in poweroff halt; do
 		"${rmnt}/etc/systemd/system/${tgt}.target.wants/pb2-eth-linkdown.service"
 done
 
+# ---------------------------------------------------------------------
+# 5f. Real power-off. Confirmed on real hardware: after "sudo poweroff" the
+#     kernel (tps65219 power-off handler, then PSCI SYSTEM_OFF) leaves the PMIC
+#     running -- the SoC is parked, the red power LED stays lit, USB VBUS and
+#     the Ethernet PHY stay powered and the power button does nothing. The
+#     same I2C_OFF_REQ sent from userspace switches the PMIC off properly
+#     (all rails off, power button restarts the board).
+#     pb2-pmic-poweroff.shutdown sends it as a systemd-shutdown hook, i.e.
+#     after services are stopped and filesystems unmounted; i2c-dev provides
+#     /dev/i2c-N. poweroff only (not halt/reboot); if the PMIC does not react
+#     the normal kernel power-off continues.
+# ---------------------------------------------------------------------
+log "Installing pb2-pmic-poweroff (real power-off via the PMIC) and i2c-dev autoload"
+sudo mkdir -p "${rmnt}/usr/lib/systemd/system-shutdown" "${rmnt}/etc/modules-load.d"
+sudo install -m 0755 "${here}/image/pb2-pmic-poweroff.shutdown" \
+	"${rmnt}/usr/lib/systemd/system-shutdown/pb2-pmic-poweroff.shutdown"
+sudo install -m 0644 "${here}/image/pb2-i2c-dev.conf" "${rmnt}/etc/modules-load.d/pb2-i2c-dev.conf"
+
 sync
 sudo umount "${rmnt}"
 sudo losetup -d "${rloopdev}"

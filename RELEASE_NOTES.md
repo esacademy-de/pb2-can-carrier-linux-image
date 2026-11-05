@@ -44,6 +44,15 @@ First bring-up on real hardware (2026-11-04/05) found and fixed:
   during poweroff/halt (not reboot), after systemd-networkd has stopped and before the filesystems are
   unmounted; the kernel then powers the PHY down (phy_detach -> phy_suspend). Installed by `assemble-image.sh`
   (step 5e). Verified on hardware: shutdown order in the console capture, and the user confirmed the link goes down.
+- **`poweroff` did not really power the board off**: after `sudo poweroff` the kernel's power-off path (tps65219
+  handler, then PSCI SYSTEM_OFF) leaves the PMIC running: the SoC is parked, the red "P" power LED stays lit, USB VBUS stays
+  on and the PB2 power button does nothing. The same TPS65219 I2C_OFF_REQ (MFP_CTRL 0x29 bit 0) sent from userspace powers
+  everything off (USB off, LEDs off, power button restarts the board; confirmed on hardware). `image/pb2-pmic-poweroff.shutdown`
+  sends it as a systemd-shutdown hook after the filesystems are unmounted, with `i2c-dev` autoloaded (`image/pb2-i2c-dev.conf`);
+  poweroff only (not halt/reboot), and if the PMIC does not react the normal kernel power-off continues. Installed by
+  `assemble-image.sh` step 5f. Verified on hardware with the hook installed: after `sudo poweroff` everything turns off (including
+  the carrier rails, USB and the PHY link) and the power button restarts the board. The root cause in the kernel path (why the
+  PMIC request does not take effect there) was not found.
 - Checked and confirmed by the owner (2026-11-05): the ETH-04 cold-boot check, the card-reader
   hot-plug behaviour and the UART0 login.
 - CAN: all external PCAN-USB FD tests pass on all three ports (classic, FD/BRS, shared bus); RT-01 cyclictest max 112 us under load.

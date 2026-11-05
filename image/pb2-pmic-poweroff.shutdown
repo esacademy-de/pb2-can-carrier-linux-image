@@ -1,0 +1,49 @@
+#!/usr/bin/python3
+"""systemd-shutdown hook: really power the PocketBeagle 2 off by sending the TPS65219 I2C off request from userspace.
+
+Why: on this board the kernel's own power-off path (tps65219 handler followed by the PSCI SYSTEM_OFF call) leaves the
+PMIC running: the SoC is parked, the power LED stays lit, USB VBUS and the Ethernet PHY stay powered and the power
+button does nothing. The same request (MFP_CTRL 0x29 bit 0, I2C_OFF_REQ) sent from userspace makes the PMIC switch
+all rails off and the power button restarts the board (verified on hardware).
+
+systemd runs the executables in /usr/lib/systemd/system-shutdown/ after all services are stopped and the filesystems
+are unmounted (the root filesystem is only read-only), with one argument: poweroff | halt | reboot | kexec.
+Only "poweroff" is acted on; if the PMIC does not react within a few seconds this returns and the normal kernel
+power-off continues.
+"""
+import fcntl
+import glob
+import os
+import sys
+import time
+
+if len(sys.argv) < 2 or sys.argv[1] != "poweroff":
+    sys.exit(0)
+
+I2C_SLAVE_FORCE = 0x0706        # the tps65219 kernel driver owns the device
+PMIC_ADDR = 0x30
+MFP_CTRL = 0x29
+I2C_OFF_REQ = 0x01
+
+
+def pmic_bus():
+    """I2C bus number of the tps65219 (3 on the PB2), found through sysfs; falls back to 3."""
+    for name in glob.glob("/sys/bus/i2c/devices/*-0030/name"):
+        try:
+            if open(name).read().strip().startswith("tps65219"):
+                return int(os.path.basename(os.path.dirname(name)).split("-")[0])
+        except (OSError, ValueError):
+            pass
+    return 3
+
+
+try:
+    fd = os.open("/dev/i2c-%d" % pmic_bus(), os.O_RDWR)
+    fcntl.ioctl(fd, I2C_SLAVE_FORCE, PMIC_ADDR)
+    os.write(fd, bytes([MFP_CTRL, I2C_OFF_REQ]))
+except OSError as e:
+    print("pb2-pmic-poweroff: could not send the PMIC off request (%s), falling back to the kernel power-off" % e)
+    sys.exit(0)
+
+time.sleep(5)                   # the PMIC cuts the power within milliseconds
+print("pb2-pmic-poweroff: the PMIC did not power off, falling back to the kernel power-off")
