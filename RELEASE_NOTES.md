@@ -14,6 +14,40 @@ how" below for exactly what that first run produced. No hardware
 validation (work order §11) has been run yet — that's the next and last
 remaining step, and it's yours to do.
 
+## Hardware bring-up update (2026-11-05)
+
+First bring-up on real hardware (2026-11-04/05) found and fixed:
+
+- **Gigabit Ethernet RX timing**: with the PHY RX internal delay at 2.00 ns
+  roughly 35 % of received frames had CRC errors (about 39 % ping loss at 1 Gbit/s).
+  A sweep showed a clean window of 2.25-2.75 ns; the overlay now uses 2.50 ns
+  (`DP83867_RGMIIDCTL_2_50_NS`). Verified after reboot: 1500 x 1400 B pings, 0 lost, 0 CRC errors.
+  The PHY RX-delay straps decode to 2.0 ns, but the Linux driver always overwrites them from DT.
+- **PHY interrupt**: `IRQ_TYPE_LEVEL_LOW` made `request_irq` fail on the K3 GPIO controller
+  (PHY fell back to polling); now `IRQ_TYPE_EDGE_FALLING`, interrupt counter rises on every link change.
+- **RJ45 LEDs**: new kernel patch `0003` (`ti,led-function`) and overlay setting give
+  Raspberry-Pi-4/5-style LEDs: green = link, blinking on activity; orange = 1000BASE-T only.
+- **Persistent MAC (ETH-04)**: the MAC was random on every boot because `cpsw_port2` (the only
+  external port) had no eFuse hookup and the U-Boot fixup the overlay relied on does not happen on
+  this board. The overlay now sets `ti,syscon-efuse = <&cpsw_mac_syscon 0x0>` on port 2: the
+  interface takes the SoC's factory MAC (44:88:be:d4:c5:ee on the bring-up unit), identical across
+  three consecutive boots; the 5x cold-boot check (ETH-04) was checked and confirmed by the owner.
+- **SSH on Ethernet from a config file on the SD card**: new `pb2-config.txt` on the FAT partition
+  (`ssh=enabled|disabled`, `ssh_password_auth=yes|no`), applied at every boot by
+  `pb2-boot-config.service` before `ssh.service`; default SSH enabled, as in the stock image.
+  Also fixed: the stock image shipped SSH host keys generated at build time (shared by every unit);
+  `assemble-image.sh` now arms BeagleBoard's `/etc/bbb.io/ssh_regenerate` so each unit creates its own
+  keys at first boot (one extra automatic reboot). Verified on hardware: disabled -> port 22
+  refused from a PC; enabled -> login works; key-only mode with and without an authorized key.
+- **Ethernet stayed up after `poweroff`** (RJ45 LEDs on, switch port up): nothing in the shutdown path
+  closes `eth0`, so the DP83867 stays powered. `image/pb2-eth-linkdown.service` now runs `ip link set eth0 down`
+  during poweroff/halt (not reboot), after systemd-networkd has stopped and before the filesystems are
+  unmounted; the kernel then powers the PHY down (phy_detach -> phy_suspend). Installed by `assemble-image.sh`
+  (step 5e). Verified on hardware: shutdown order in the console capture, and the user confirmed the link goes down.
+- Checked and confirmed by the owner (2026-11-05): the ETH-04 cold-boot check, the card-reader
+  hot-plug behaviour and the UART0 login.
+- CAN: all external PCAN-USB FD tests pass on all three ports (classic, FD/BRS, shared bus); RT-01 cyclictest max 112 us under load.
+
 ## What was verified, and how
 
 All of the following was done against real local builds (WSL, real

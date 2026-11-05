@@ -61,7 +61,7 @@ spidev node (work order §5.1, §7.2, §11 SPI-01).
   uses port 2, so the overlay adds `ti,syscon-efuse = <&cpsw_mac_syscon 0x0>` to `&cpsw_port2`
   (the U-Boot fixup this used to rely on does not happen on real hardware). Verified: the interface
   takes the factory MAC (`0x43000200/204`) and keeps it across reboots (§11 ETH-04; the 5x cold-boot
-  run is still to be done).
+  check was confirmed by the owner).
 
 `main_spi0` (stock, no consumer found in the base DTS) is explicitly
 disabled by this overlay: its pinctrl claimed ball A14 (companion of

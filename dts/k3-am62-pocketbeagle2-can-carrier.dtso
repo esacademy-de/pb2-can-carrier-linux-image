@@ -244,9 +244,8 @@
  * edge of the working window (about 30-40 % CRC errors on received frames
  * and the same share of lost pings at 1 Gbit/s). A sweep of the PHY's RX
  * delay showed a clean window of 2.25-2.75 ns (0 CRC errors over 1500 x
- * 1400 B pings at 2.25, 2.50 and 2.75 ns); 2.50 ns is its centre. See
- * hwbringup/HWBRINGUP_LOG.md sections 2.1 and 2.2. TX delay stays 0 ns
- * (the MAC supplies it, D-10).
+ * 1400 B pings at 2.25, 2.50 and 2.75 ns); 2.50 ns is its centre. TX
+ * delay stays 0 ns (the MAC supplies it, D-10).
  * ---------------------------------------------------------------------
  */
 &main_pmx0 {

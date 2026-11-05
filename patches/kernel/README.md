@@ -29,8 +29,7 @@ zero errors or warnings** against the real kernel config
    it from `dp83867_config_init()` because the PHY drops the selection on
    every soft reset (including `ip link set eth0 down/up`). The carrier
    overlay uses it for Raspberry-Pi-4/5-style RJ45 LEDs (green = link, blinks
-   on activity; orange = 1000BASE-T). Added after hardware bring-up
-   (hwbringup/HWBRINGUP_LOG.md §2.3). Verified: compiles with `W=1` without
+   on activity; orange = 1000BASE-T). Added after hardware bring-up. Verified: compiles with `W=1` without
    warnings, `dt_binding_check` passes with the new property in the binding
    example, `checkpatch` only notes that the binding doc and the driver are in
    one patch (same as patch 0001), and on hardware LEDCR1 reads back `0x65b0`
