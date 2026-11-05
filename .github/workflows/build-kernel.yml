@@ -53,7 +53,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential crossbuild-essential-arm64 bc bison flex libssl-dev libelf-dev \
             libdw-dev libmpc-dev gettext zstd xz-utils lz4 kmod cpio rsync fakeroot \
-            debhelper dpkg-dev device-tree-compiler u-boot-tools python3 git ca-certificates \n            bindgen rust-src rustc rustfmt rust-clippy
+            debhelper dpkg-dev device-tree-compiler u-boot-tools python3 git ca-certificates \
+            bindgen rust-src rustc rustfmt rust-clippy
 
       - name: Check the version
         run: echo "kernel package version $(bash scripts/kernel-version.sh)"
