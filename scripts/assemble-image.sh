@@ -31,16 +31,30 @@ kernel_src="${kdir}/KERNEL"
 ddir="${work}/dts"
 ibdir="${work}/image-builder"
 
-if [ ! -f "${kernel_src}/.config" ] || [ ! -f "${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo" ]; then
-	echo "error: run scripts/build-image.sh first (kernel tree / overlay not prepared)." >&2
+# PB2_KERNEL_DEB=<linux-image .deb>: use a kernel package that was built before
+# (for example the one from the package repository, built by the build-kernel
+# workflow) instead of compiling one here. The image then carries exactly the
+# kernel that "apt" serves.
+if [ ! -f "${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo" ] \
+	|| { [ -z "${PB2_KERNEL_DEB:-}" ] && [ ! -f "${kernel_src}/.config" ]; }; then
+	echo "error: run scripts/build-image.sh first (kernel tree / overlay not prepared), or set PB2_KERNEL_DEB." >&2
 	exit 1
 fi
 
 # ---------------------------------------------------------------------
-# 1. Package our patched, configured kernel as a real .deb.
+# 1. The kernel as a real .deb.
 # ---------------------------------------------------------------------
-log "Kernel: building .deb package (make bindeb-pkg)"
-bash "${here}/scripts/build-kernel-deb.sh" "${kernel_src}" "${kdir}/deploy"
+if [ -n "${PB2_KERNEL_DEB:-}" ]; then
+	log "Kernel: using the prebuilt package ${PB2_KERNEL_DEB}"
+	[ -f "${PB2_KERNEL_DEB}" ] || { echo "error: ${PB2_KERNEL_DEB} not found" >&2; exit 1; }
+	dpkg-deb -f "${PB2_KERNEL_DEB}" Package Version
+	mkdir -p "${kdir}/deploy"
+	rm -f "${kdir}"/deploy/linux-image-*.deb
+	cp "${PB2_KERNEL_DEB}" "${kdir}/deploy/"
+else
+	log "Kernel: building .deb package (make bindeb-pkg)"
+	bash "${here}/scripts/build-kernel-deb.sh" "${kernel_src}" "${kdir}/deploy"
+fi
 
 # ---------------------------------------------------------------------
 # 2. Clone + patch beagleboard/image-builder at the pinned commit.
