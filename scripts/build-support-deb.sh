@@ -34,9 +34,11 @@ install -d -m 0755 "${root}/DEBIAN" \
 	"${root}/usr/share/doc/${pkg}" \
 	"${root}/etc/apt/preferences.d" \
 	"${root}/etc/apt/sources.list.d" \
-	"${root}/etc/modules-load.d"
+	"${root}/etc/modules-load.d" \
+	"${root}/etc/profile.d"
 
-install -m 0755 "${here}/image/pb2-boot-config.sh"         "${root}/usr/sbin/pb2-boot-config"
+install -m 0644 "${here}/image/pb2-serial-size.sh"         "${root}/etc/profile.d/pb2-serial-size.sh"
+install -m 0755 "${here}/image/pb2-boot-config.sh"        "${root}/usr/sbin/pb2-boot-config"
 install -m 0644 "${here}/image/pb2-boot-config.service"   "${root}/usr/lib/systemd/system/pb2-boot-config.service"
 install -m 0644 "${here}/image/pb2-eth-linkdown.service"   "${root}/usr/lib/systemd/system/pb2-eth-linkdown.service"
 install -m 0644 "${here}/image/pb2-serial-getty-no-reset.conf" "${root}/usr/lib/systemd/system/serial-getty@.service.d/pb2-no-tty-reset.conf"
@@ -64,6 +66,7 @@ cat > "${root}/DEBIAN/conffiles" <<'CONFFILES'
 /etc/apt/preferences.d/pb2-can-carrier-kernel
 /etc/apt/sources.list.d/pb2-can-carrier.sources
 /etc/modules-load.d/pb2-i2c-dev.conf
+/etc/profile.d/pb2-serial-size.sh
 CONFFILES
 
 size_kb=$(du -sk "${root}" | cut -f1)

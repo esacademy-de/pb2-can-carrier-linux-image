@@ -409,7 +409,16 @@ may be hidden"):
      `/usr/lib/systemd/system/serial-getty@.service.d/pb2-no-tty-reset.conf`
      in `pb2-can-carrier-support`. Trade-off: systemd no longer resets the
      line discipline when a getty restarts. PID 1's single reset on
-     `/dev/console` early in boot remains.
+     `/dev/console` early in boot remains. The same drop-in sets
+     `TERM=xterm-256color` for the serial gettys (systemd's serial
+     default, `vt220`, has no colour capability, so prompt, `ls`, `htop`
+     and `mc` were monochrome). Because the systemd size probe is gone and
+     a serial line cannot carry the window size, programs fell back to
+     24x80; `/etc/profile.d/pb2-serial-size.sh` asks the terminal for its
+     size at each login on a serial tty (cursor-position report, applied
+     with `stty`), and `pb2-serial-size` repeats it after resizing the
+     window. Tested against a pty in WSL (reply: 44x178 applied; no reply:
+     unchanged after 2 s); not yet run on the board.
    - **The "won't finish booting"/apparent hang with a passive capture
      script is not a bug.** At the very end of boot, `agetty` sends
      `ESC[6n` (a cursor-position query, part of standard terminal
