@@ -414,13 +414,17 @@
 		 * temperature variation. */
 		reset-assert-us = <1000>;
 		reset-deassert-us = <1000>;
-		interrupt-parent = <&main_gpio1>;
-		/* The DP83867 INT pin is active-low open-drain, but the K3 GPIO
-		 * controller cannot do level interrupts: requesting
-		 * IRQ_TYPE_LEVEL_LOW failed on real hardware ("genirq: Setting
-		 * trigger mode 8 for irq failed", PHY fell back to polling).
-		 * The falling edge is what the PHY asserts for each event. */
-		interrupts = <18 IRQ_TYPE_EDGE_FALLING>;
+		/* No interrupt: the link state is polled (once a second).
+		 * The DP83867 INT pin (GPIO1_18) is an active-low, level-type,
+		 * open-drain output, but the K3 GPIO controller can only detect
+		 * edges: IRQ_TYPE_LEVEL_LOW is rejected ("genirq: Setting trigger
+		 * mode 8 for irq failed"), and with IRQ_TYPE_EDGE_FALLING a missed
+		 * edge during a burst of link changes leaves the kernel believing
+		 * the link is down for good while the PHY has link (seen on a
+		 * second board, 2026-11-09: NO-CARRIER with PHYSTS = 1 Gbit/full,
+		 * recovered only by "ip link set eth0 down/up"). Polling cannot
+		 * get stuck. The pad stays configured as the GPIO1_18 input
+		 * above. */
 	};
 };
 

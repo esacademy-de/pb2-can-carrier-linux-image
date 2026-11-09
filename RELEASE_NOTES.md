@@ -16,6 +16,13 @@ remaining step, and it's yours to do.
 
 ## SPI / GPIO tooling update (2026-11-09)
 
+- **Bug fix, Ethernet link stuck down**: the PHY interrupt (GPIO1_18, edge
+  falling) can miss an edge during a burst of link changes; the kernel then
+  stays at `NO-CARRIER` while the PHY has link (observed on a second board:
+  PHYSTS = 1 Gbit/full, only `ip link set eth0 down/up` recovered it). The
+  PHY interrupt is removed from the overlay again; the link state is polled
+  once a second (the mode of the first bring-up days). The 2026-11-05 entry
+  below that introduced the edge interrupt is superseded.
 - **Bug fix, SPI2 pin mux**: the carrier overlay put the four SPI2 pads
   (CS0 E19, CLK A20, MISO B19, MOSI A19) in mux mode 0, which is McASP0; SPI2
   is mode 1 on these balls (as in `k3-am625-beagleplay.dts`). The earlier
