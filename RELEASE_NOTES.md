@@ -36,6 +36,13 @@ remaining step, and it's yours to do.
   enable spidev` + reboot switches it on, `disable` removes it. Shipped in
   `pb2-can-carrier-support`, which also installs the `spi` group and a udev
   rule so the `debian` user can open the device without `sudo`.
+- **CAN interface names follow the connectors**: `can0` = CAN A, `can1` =
+  CAN B, `can2` = CAN C. The kernel numbers the controllers in probe order,
+  which gave `can0` = CAN C and `can2` = CAN A. `pb2-can-names.service`
+  (package `pb2-can-carrier-support`) renames them once at boot, identifying
+  each controller by its address (A = 20701000.can, B = 4e18000.can,
+  C = 4e08000.can). No kernel or overlay change. Verified on hardware after a
+  reboot. A USB CAN adapter still appears as the next free `canN` (`can3`).
 - Image packages added: `python3-periphery`, `python3-spidev`, `spi-tools`.
   `python3-gpiozero` is deliberately not included: Debian's version (1.6.2)
   has no pin factory that works on this board (Raspberry-Pi-only backends;

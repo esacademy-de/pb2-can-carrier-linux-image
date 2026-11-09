@@ -1,0 +1,17 @@
+[Unit]
+Description=PB2 CAN Carrier: name the CAN interfaces after the connectors (can0 = CAN A)
+Documentation=file:///usr/share/doc/pb2-can-carrier-support/README.md
+# The kernel numbers the CAN interfaces in probe order (can0 = CAN C); swap
+# them once so that can0/can1/can2 are CAN A/B/C. Done before the network is
+# configured and before any service can have opened a CAN interface.
+After=systemd-udevd.service systemd-udev-trigger.service
+Before=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/pb2-can-names
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -41,6 +41,8 @@ install -m 0644 "${here}/image/pb2-serial-size.sh"         "${root}/etc/profile.
 install -m 0755 "${here}/image/pb2-boot-config.sh"        "${root}/usr/sbin/pb2-boot-config"
 install -m 0644 "${here}/image/pb2-boot-config.service"   "${root}/usr/lib/systemd/system/pb2-boot-config.service"
 install -m 0644 "${here}/image/pb2-eth-linkdown.service"   "${root}/usr/lib/systemd/system/pb2-eth-linkdown.service"
+install -m 0755 "${here}/image/pb2-can-names.sh"           "${root}/usr/sbin/pb2-can-names"
+install -m 0644 "${here}/image/pb2-can-names.service"      "${root}/usr/lib/systemd/system/pb2-can-names.service"
 install -m 0644 "${here}/image/pb2-serial-getty-no-reset.conf" "${root}/usr/lib/systemd/system/serial-getty@.service.d/pb2-no-tty-reset.conf"
 install -m 0755 "${here}/image/pb2-pmic-poweroff.shutdown" "${root}/usr/lib/systemd/system-shutdown/pb2-pmic-poweroff.shutdown"
 install -m 0644 "${here}/image/pb2-i2c-dev.conf"           "${root}/etc/modules-load.d/pb2-i2c-dev.conf"

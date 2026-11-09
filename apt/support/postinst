@@ -2,7 +2,7 @@
 # pb2-can-carrier-support: enable the carrier units, install the overlay.
 set -e
 
-UNITS="pb2-boot-config.service pb2-eth-linkdown.service"
+UNITS="pb2-boot-config.service pb2-eth-linkdown.service pb2-can-names.service"
 OVERLAY=k3-am62-pocketbeagle2-can-carrier.dtbo
 
 case "$1" in
@@ -31,7 +31,8 @@ configure)
 		rmdir /etc/systemd/system/serial-getty@.service.d 2>/dev/null || true
 	fi
 	find /etc/systemd/system -maxdepth 2 -type l \
-		\( -name pb2-boot-config.service -o -name pb2-eth-linkdown.service \) \
+		\( -name pb2-boot-config.service -o -name pb2-eth-linkdown.service \
+		-o -name pb2-can-names.service \) \
 		-lname '/etc/systemd/system/*' -delete 2>/dev/null || true
 
 	# Group for the user-space SPI devices (udev rule 80-pb2-spidev.rules);

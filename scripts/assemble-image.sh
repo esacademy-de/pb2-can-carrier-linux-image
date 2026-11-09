@@ -325,6 +325,8 @@ sudo awk -F: '$1 == "debian" { print "  debian: lastchg=" $3 ", hash present" }'
 #       - pb2-eth-linkdown.service: Ethernet link down on power-off. Confirmed
 #         on hardware: nothing in the power-off path closes the interface, so
 #         the DP83867 PHY keeps its link (RJ45 LEDs on, switch port up).
+#       - pb2-can-names.service: can0/can1/can2 = CAN A/B/C (the kernel's probe
+#         order would give can0 = CAN C).
 #       - pb2-pmic-poweroff shutdown hook + i2c-dev autoload. Confirmed on
 #         hardware: the kernel's power-off path (tps65219 handler, PSCI
 #         SYSTEM_OFF) leaves the PMIC running (SoC parked, power LED lit, USB
@@ -358,6 +360,7 @@ sudo umount "${rmnt}/proc"
 sudo rm -f "${rmnt}"/tmp/pb2-can-carrier-*.deb
 rm -rf "${support_dir}"
 for want in multi-user.target.wants/pb2-boot-config.service \
+	multi-user.target.wants/pb2-can-names.service \
 	poweroff.target.wants/pb2-eth-linkdown.service halt.target.wants/pb2-eth-linkdown.service; do
 	sudo test -L "${rmnt}/etc/systemd/system/${want}" \
 		|| { echo "error: ${want} is not enabled" >&2; exit 1; }
