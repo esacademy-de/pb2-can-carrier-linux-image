@@ -16,6 +16,13 @@ remaining step, and it's yours to do.
 
 ## SPI / GPIO tooling update (2026-11-09)
 
+- **Bug fix, SPI2 pin mux**: the carrier overlay put the four SPI2 pads
+  (CS0 E19, CLK A20, MISO B19, MOSI A19) in mux mode 0, which is McASP0; SPI2
+  is mode 1 on these balls (as in `k3-am625-beagleplay.dts`). The earlier
+  "confirmed" mode 0 came from `k3-am625-sancloud-bbe-2.dts`, whose SPI2
+  pinctrl is commented out. The controller probed, but no SPI signal left
+  the SoC. Fixed; verified on hardware with a MOSI-to-MISO loopback (J2 pins
+  4 and 5) at 100 kHz, 1 MHz and 10 MHz in all four SPI modes.
 - **Optional `spidev` overlay** (`dts/optional-spi-children/`): one generic
   `/dev/spidev2.0` (SPI2, chip select 0) for user-space SPI. Inactive by
   default (the base overlay still creates no spidev node); `sudo pb2-overlay

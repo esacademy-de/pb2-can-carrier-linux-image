@@ -7,8 +7,8 @@
  * for the pinned commit). Pin offsets/modes verified against that pinned
  * base plus its k3-am62-pocketbeagle2-pinmux.dtsi (header-pin/ball fallback
  * reference) and against arch/arm64/boot/dts/ti/k3-am625-sk-common.dtsi and
- * k3-am625-sancloud-bbe-2.dts (linux-stable v6.18) for the RGMII2 and SPI2
- * function-mode confirmations respectively.
+ * k3-am625-beagleplay.dts for the RGMII2 and SPI2 function-mode
+ * confirmations respectively (SPI2: see section 4).
  *
  * Scope: 3x CAN-FD (TCAN3413 generic PHY + M_CAN), carrier UART0 console,
  * Gigabit Ethernet (DP83867 on CPSW port 2), user LED, SPI2 controller
@@ -430,17 +430,21 @@
  *
  * J1/J2 are parallel copies of the same bus/CS0; only the controller is
  * enabled here. Child-device overlays live in dts/optional-spi-children/.
- * Mode-0 SPI2 function confirmed against linux-stable v6.18
- * k3-am625-sancloud-bbe-2.dts, which uses these identical AM625 balls.
+ * SPI2 is pad mux MODE 1 on these balls (mode 0 is McASP0): confirmed
+ * against k3-am625-beagleplay.dts (same AM625, same balls, working SPI2)
+ * and by a loopback test on this carrier. (An earlier revision of this file
+ * used mode 0, taken from k3-am625-sancloud-bbe-2.dts, whose SPI2 pinctrl is
+ * commented out there: no SPI signal ever left the SoC.)
+ * Header pins: P1.06 CS0, P1.08 CLK, P1.10 MISO (D0), P1.12 MOSI (D1).
  * ---------------------------------------------------------------------
  */
 &main_pmx0 {
 	main_spi2_pins_default: main-spi2-default-pins {
 		pinctrl-single,pins = <
-			AM62X_IOPAD(0x01ac, PIN_INPUT, 0) /* (E19) MCASP0_AFSR.SPI2_CS0 */
-			AM62X_IOPAD(0x01b0, PIN_INPUT, 0) /* (A20) MCASP0_ACLKR.SPI2_CLK */
-			AM62X_IOPAD(0x0194, PIN_INPUT, 0) /* (B19) MCASP0_AXR3.SPI2_D0 (MISO) */
-			AM62X_IOPAD(0x0198, PIN_INPUT, 0) /* (A19) MCASP0_AXR2.SPI2_D1 (MOSI) */
+			AM62X_IOPAD(0x01ac, PIN_INPUT, 1) /* (E19) MCASP0_AFSR.SPI2_CS0 */
+			AM62X_IOPAD(0x01b0, PIN_INPUT, 1) /* (A20) MCASP0_ACLKR.SPI2_CLK */
+			AM62X_IOPAD(0x0194, PIN_INPUT, 1) /* (B19) MCASP0_AXR3.SPI2_D0 (MISO) */
+			AM62X_IOPAD(0x0198, PIN_INPUT, 1) /* (A19) MCASP0_AXR2.SPI2_D1 (MOSI) */
 		>;
 	};
 

@@ -15,8 +15,11 @@ Written and verified:
 - RGMII2 pin group and the DP83867 `phy-mode`/`ti,rx-internal-delay`
   pairing cross-checked against linux-stable v6.18's own
   `arch/arm64/boot/dts/ti/k3-am625-sk-common.dtsi`.
-- SPI2 mode-0 pin assignment cross-checked against linux-stable v6.18's
-  `arch/arm64/boot/dts/ti/k3-am625-sancloud-bbe-2.dts`.
+- SPI2 pads use mux mode 1 (mode 0 is McASP0), as in the pinned
+  BeagleBoard-DeviceTrees `k3-am625-beagleplay.dts` (same SoC, same balls);
+  verified by a MOSI-to-MISO loopback test on the carrier. (Earlier revisions
+  used mode 0, copied from `k3-am625-sancloud-bbe-2.dts`, whose SPI2 pinctrl is
+  commented out: the controller was enabled but no SPI signal left the SoC.)
 - Compiled with `dtc -@ -W all` via the pinned BeagleBoard-DeviceTrees
   repo's own Makefile (needed for its include paths and CPP flags) —
   zero warnings.
