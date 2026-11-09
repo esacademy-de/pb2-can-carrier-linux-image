@@ -116,7 +116,13 @@ mnt="$(mktemp -d)"
 loopdev="$(sudo losetup -f)"
 sudo losetup -o 1048576 --sizelimit $((524288 * 512)) "${loopdev}" "${img}"
 sudo mount "${loopdev}" "${mnt}"
-sudo cp "${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo" "${mnt}/overlays/"
+# The optional overlays (dts/optional-spi-children, switched on with
+# "pb2-overlay enable <name>") are compiled with the same device-tree tree
+# and go next to the carrier overlay; they are inactive until enabled.
+cp "${here}"/dts/optional-spi-children/*.dtso "${ddir}/src/arm64/overlays/"
+( cd "${ddir}" && make all_arm64 >/dev/null )
+sudo cp "${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo" \
+	"${ddir}"/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier-*.dtbo "${mnt}/overlays/"
 
 # User-editable carrier configuration on the SD card's FAT partition
 # (SSH on/off, password logins); applied at every boot by
@@ -339,7 +345,8 @@ log "Installing pb2-can-carrier-support (carrier units, hooks, overlay, apt pin,
 support_dir="$(mktemp -d)"
 support_version="$(bash "${here}/scripts/support-version.sh")"
 bash "${here}/scripts/build-support-deb.sh" "${support_version}" "${support_dir}" \
-	"${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo"
+	"${ddir}/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo" \
+	"${ddir}"/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier-*.dtbo
 # pb2-can-carrier-kernel: meta package that follows the carrier kernel, so that
 # "apt upgrade" on the board installs kernel updates of the package repository.
 kernel_deb="$(find "${kdir}/deploy" -name 'linux-image-*.deb' | sort -V | tail -n 1)"
@@ -359,6 +366,8 @@ sudo test -x "${rmnt}/usr/lib/systemd/system-shutdown/pb2-pmic-poweroff.shutdown
 	|| { echo "error: PMIC power-off hook missing" >&2; exit 1; }
 sudo test -f "${rmnt}/etc/modules-load.d/pb2-i2c-dev.conf" \
 	|| { echo "error: i2c-dev autoload missing" >&2; exit 1; }
+sudo test -x "${rmnt}/usr/sbin/pb2-overlay" \
+	|| { echo "error: pb2-overlay missing" >&2; exit 1; }
 
 # ---------------------------------------------------------------------
 # 5g. apt: drop the build-time local repository. The kernel .deb reached the

@@ -65,7 +65,9 @@ jobs:
           mkdir -p pool
           version=$(bash scripts/support-version.sh)
           echo "pb2-can-carrier-support $version"
-          bash scripts/build-support-deb.sh "$version" pool "$RUNNER_TEMP/overlay/k3-am62-pocketbeagle2-can-carrier.dtbo"
+          # carrier overlay first, then the optional ones (k3-...-can-carrier-<name>.dtbo)
+          bash scripts/build-support-deb.sh "$version" pool "$RUNNER_TEMP/overlay/k3-am62-pocketbeagle2-can-carrier.dtbo" \
+            "$RUNNER_TEMP"/overlay/k3-am62-pocketbeagle2-can-carrier-*.dtbo
           # small packages kept in the repository
           find packages -maxdepth 2 \( -name '*.deb' -o -name '*.dsc' -o -name '*.tar.*' -o -name '*.diff.gz' -o -name '*.changes' \) \
             -exec cp -v {} pool/ \; 2>/dev/null || true

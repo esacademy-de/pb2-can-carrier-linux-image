@@ -11,6 +11,9 @@ can-utils
 libgpiod2
 gpiod
 ethtool
+python3-periphery     # GPIO/SPI/I2C from Python without libgpiod
+python3-spidev        # /dev/spidev* from Python (optional spidev overlay)
+spi-tools             # spi-config, spi-pipe
 iproute2
 usbutils
 mmc-utils

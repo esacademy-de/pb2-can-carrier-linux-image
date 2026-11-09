@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Compile the carrier overlay against the pinned BeagleBoard device-tree
-# commit (manifests/sources.lock), check that it merges into the PB2 base
-# tree, and copy the .dtbo to <outdir>.
+# Compile the carrier overlay and the optional child overlays
+# (dts/optional-spi-children/*.dtso) against the pinned BeagleBoard
+# device-tree commit (manifests/sources.lock), check that they merge into the
+# PB2 base tree (carrier overlay first), and copy the .dtbo files to <outdir>.
 #
 # usage: scripts/build-overlay.sh <outdir> [workdir]
 # needs: device-tree-compiler, git, make, a C compiler
@@ -21,12 +22,22 @@ if [ ! -d "${work}/dts-repo/.git" ]; then
 	git clone --branch v6.18.x https://github.com/beagleboard/BeagleBoard-DeviceTrees.git "${work}/dts-repo"
 fi
 git -C "${work}/dts-repo" checkout -q "${commit}"
-cp "${overlay}" "${work}/dts-repo/src/arm64/overlays/"
+ovdir="${work}/dts-repo/src/arm64/overlays"
+cp "${overlay}" "${ovdir}/"
+children=()
+for f in "${here}"/dts/optional-spi-children/*.dtso; do
+	[ -f "${f}" ] || continue
+	cp "${f}" "${ovdir}/"
+	children+=("${ovdir}/$(basename "${f%.dtso}").dtbo")
+done
 make -C "${work}/dts-repo" all_arm64 >/dev/null
 fdtoverlay \
 	-i "${work}/dts-repo/src/arm64/ti/k3-am62-pocketbeagle2.dtb" \
 	-o "${work}/merged.dtb" \
-	"${work}/dts-repo/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo"
+	"${ovdir}/k3-am62-pocketbeagle2-can-carrier.dtbo" "${children[@]}"
 mkdir -p "${outdir}"
-cp "${work}/dts-repo/src/arm64/overlays/k3-am62-pocketbeagle2-can-carrier.dtbo" "${outdir}/"
+cp "${ovdir}/k3-am62-pocketbeagle2-can-carrier.dtbo" "${children[@]}" "${outdir}/"
 echo "${outdir}/k3-am62-pocketbeagle2-can-carrier.dtbo"
+for c in "${children[@]}"; do
+	echo "${outdir}/$(basename "${c}")"
+done

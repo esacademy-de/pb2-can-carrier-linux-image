@@ -14,6 +14,19 @@ how" below for exactly what that first run produced. No hardware
 validation (work order §11) has been run yet — that's the next and last
 remaining step, and it's yours to do.
 
+## SPI / GPIO tooling update (2026-11-09)
+
+- **Optional `spidev` overlay** (`dts/optional-spi-children/`): one generic
+  `/dev/spidev2.0` (SPI2, chip select 0) for user-space SPI. Inactive by
+  default (the base overlay still creates no spidev node); `sudo pb2-overlay
+  enable spidev` + reboot switches it on, `disable` removes it. Shipped in
+  `pb2-can-carrier-support`, which also installs the `spi` group and a udev
+  rule so the `debian` user can open the device without `sudo`.
+- Image packages added: `python3-periphery`, `python3-spidev`, `spi-tools`.
+  `python3-gpiozero` is deliberately not included: Debian's version (1.6.2)
+  has no pin factory that works on this board (Raspberry-Pi-only backends;
+  the `lgpio` backend is not packaged in Debian trixie).
+
 ## Hardware bring-up update (2026-11-05)
 
 First bring-up on real hardware (2026-11-04/05) found and fixed:

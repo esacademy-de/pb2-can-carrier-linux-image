@@ -4,17 +4,21 @@
 # power-off hook, i2c-dev autoload, apt pin, package repository source and key)
 # in one package, so that a fresh image and an updated board end up identical.
 #
-# usage: scripts/build-support-deb.sh <version> <outdir> <overlay.dtbo>
+# usage: scripts/build-support-deb.sh <version> <outdir> <overlay.dtbo> [optional-overlay.dtbo ...]
+# The first overlay is the carrier overlay, the others are the optional ones
+# (see dts/optional-spi-children/); all are shipped in the package.
 # The version must increase with every change to the packaged files; use
 # scripts/support-version.sh.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-[ $# -eq 3 ] || { echo "usage: $0 <version> <outdir> <overlay.dtbo>" >&2; exit 2; }
+[ $# -ge 3 ] || { echo "usage: $0 <version> <outdir> <overlay.dtbo> [optional-overlay.dtbo ...]" >&2; exit 2; }
 version="$1"
 outdir="$2"
-dtbo="$3"
-[ -f "${dtbo}" ] || { echo "error: overlay ${dtbo} not found" >&2; exit 1; }
+shift 2
+for dtbo in "$@"; do
+	[ -f "${dtbo}" ] || { echo "error: overlay ${dtbo} not found" >&2; exit 1; }
+done
 
 pkg=pb2-can-carrier-support
 root="$(mktemp -d)"
@@ -41,7 +45,12 @@ install -m 0644 "${here}/image/pb2-i2c-dev.conf"           "${root}/etc/modules-
 install -m 0644 "${here}/image/pb2-apt-preferences"        "${root}/etc/apt/preferences.d/pb2-can-carrier-kernel"
 install -m 0644 "${here}/apt/support/pb2-can-carrier.sources" "${root}/etc/apt/sources.list.d/pb2-can-carrier.sources"
 install -m 0644 "${here}/apt/pb2-can-carrier-archive-keyring.gpg" "${root}/usr/share/keyrings/pb2-can-carrier-archive-keyring.gpg"
-install -m 0644 "${dtbo}" "${root}/usr/share/pb2-can-carrier/overlays/$(basename "${dtbo}")"
+install -m 0755 "${here}/image/pb2-overlay.py"             "${root}/usr/sbin/pb2-overlay"
+install -d -m 0755 "${root}/usr/lib/udev/rules.d"
+install -m 0644 "${here}/image/pb2-spidev.rules"           "${root}/usr/lib/udev/rules.d/80-pb2-spidev.rules"
+for dtbo in "$@"; do
+	install -m 0644 "${dtbo}" "${root}/usr/share/pb2-can-carrier/overlays/$(basename "${dtbo}")"
+done
 install -m 0644 "${here}/apt/README.md" "${root}/usr/share/doc/${pkg}/README.md"
 cat > "${root}/usr/share/doc/${pkg}/copyright" <<'COPYRIGHT'
 PB2 CAN Carrier support files. Source, licences and history:
@@ -69,9 +78,10 @@ Section: admin
 Priority: optional
 Homepage: https://github.com/esacademy-de/pb2-can-carrier-linux-image
 Description: PocketBeagle 2 CAN Carrier support files
- Carrier overlay, SD-card configuration (SSH switch), Ethernet link-down on
- power-off, real PMIC power-off, apt pin that keeps the carrier kernel, and the
- signed package repository of the PB2 CAN Carrier.
+ Carrier overlay (plus optional ones, switched with pb2-overlay),
+ SD-card configuration (SSH switch), Ethernet link-down on power-off, real
+ PMIC power-off, apt pin that keeps the carrier kernel, and the signed package
+ repository of the PB2 CAN Carrier.
 CONTROL
 
 mkdir -p "${outdir}"

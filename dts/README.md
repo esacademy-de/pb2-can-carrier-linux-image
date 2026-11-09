@@ -51,9 +51,12 @@ configures it as required (dr_mode=host, VBUS pins), so touching it here
 would violate the "smallest reviewable change" instruction (work order
 Appendix C) for no reason.
 
-Later SPI child-device overlays belong in `optional-spi-children/`,
-independent and composable — this base overlay must not create a generic
-spidev node (work order §5.1, §7.2, §11 SPI-01).
+SPI child-device overlays belong in `optional-spi-children/`, independent
+and composable — this base overlay must not create a generic spidev node
+(work order §5.1, §7.2, §11 SPI-01). The first one is the optional `spidev`
+overlay (`/dev/spidev2.0`): it is shipped in the `pb2-can-carrier-support`
+package, inactive by default, and switched with `sudo pb2-overlay enable
+spidev` (takes effect at the next boot; see `optional-spi-children/README.md`).
 
 ## Known open items (see RELEASE_NOTES.md for the full list)
 

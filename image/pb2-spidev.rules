@@ -1,0 +1,5 @@
+# pb2-can-carrier-support: user-space SPI devices (/dev/spidev<bus>.<cs>, for
+# example /dev/spidev2.0 with the optional "spidev" overlay, see pb2-overlay)
+# are accessible to the members of the "spi" group (the "debian" user is
+# added to it by the package) instead of root only.
+SUBSYSTEM=="spidev", GROUP="spi", MODE="0660"

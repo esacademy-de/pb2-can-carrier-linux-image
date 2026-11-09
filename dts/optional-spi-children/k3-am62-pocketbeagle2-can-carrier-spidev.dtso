@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * Optional: user-space SPI access (/dev/spidev2.0: bus 2, chip select 0) on
+ * the carrier's SPI2 bus.
+ *
+ * The base carrier overlay enables the SPI2 controller only. This overlay
+ * adds one generic spidev child on chip select 0 (header pins P1.06 CS0,
+ * P1.08 CLK, P1.10 MISO, P1.12 MOSI; J1/J2 are parallel copies of the same
+ * bus). Load it AFTER the carrier overlay; "sudo pb2-overlay enable spidev"
+ * does that, takes effect at the next boot, and
+ * "sudo pb2-overlay disable spidev" removes it again.
+ *
+ * Not part of the default image configuration on purpose (work order §5.1,
+ * §7.2, §11 SPI-01: no generic spidev node in the base overlay). Do not load
+ * it together with an overlay that puts a real device on SPI2 chip select 0.
+ *
+ * "rohm,dh2228fv" is the compatible string the kernel's spidev driver
+ * accepts for a generic device (the plain "spidev" string is rejected since
+ * Linux 5.x); the per-transfer speed and mode are set by the user-space
+ * program, spi-max-frequency is only the upper limit.
+ */
+
+/dts-v1/;
+/plugin/;
+
+&main_spi2 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	spidev@0 {
+		compatible = "rohm,dh2228fv";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+	};
+};

@@ -34,6 +34,13 @@ configure)
 		\( -name pb2-boot-config.service -o -name pb2-eth-linkdown.service \) \
 		-lname '/etc/systemd/system/*' -delete 2>/dev/null || true
 
+	# Group for the user-space SPI devices (udev rule 80-pb2-spidev.rules);
+	# the default image user gets it, other users: "adduser <name> spi".
+	getent group spi >/dev/null || addgroup --system --quiet spi || true
+	if getent passwd debian >/dev/null && ! id -nG debian | grep -qw spi; then
+		adduser --quiet debian spi || true
+	fi
+
 	for u in $UNITS; do
 		deb-systemd-helper unmask "$u" >/dev/null || true
 		if deb-systemd-helper --quiet was-enabled "$u"; then
@@ -44,16 +51,23 @@ configure)
 	done
 	if [ -d /run/systemd/system ]; then
 		systemctl daemon-reload || true
+		udevadm control --reload 2>/dev/null || true
+		udevadm trigger --subsystem-match=spidev 2>/dev/null || true
 	fi
 
-	# The overlay is applied by U-Boot from the SD card's FAT partition.
+	# The overlays are applied by U-Boot from the SD card's FAT partition: the
+	# carrier overlay itself, plus the optional ones (k3-...-can-carrier-<name>)
+	# that "pb2-overlay enable <name>" can add to the boot entry.
 	if [ -d /boot/firmware/overlays ]; then
-		src="/usr/share/pb2-can-carrier/overlays/$OVERLAY"
-		dst="/boot/firmware/overlays/$OVERLAY"
-		if ! cmp -s "$src" "$dst"; then
-			cp "$src" "$dst"
-			echo "pb2-can-carrier-support: updated $dst (takes effect at the next boot)"
-		fi
+		for src in "/usr/share/pb2-can-carrier/overlays/$OVERLAY" \
+			/usr/share/pb2-can-carrier/overlays/k3-am62-pocketbeagle2-can-carrier-*.dtbo; do
+			[ -f "$src" ] || continue
+			dst="/boot/firmware/overlays/$(basename "$src")"
+			if ! cmp -s "$src" "$dst"; then
+				cp "$src" "$dst"
+				echo "pb2-can-carrier-support: updated $dst (takes effect at the next boot)"
+			fi
+		done
 	fi
 	;;
 esac
