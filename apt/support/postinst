@@ -22,6 +22,14 @@ configure)
 		rm -f /etc/apt/sources.list.d/repo_external.list
 		rm -rf /opt/pb2-carrier-repo
 	fi
+	# A hand-installed copy of the serial-getty drop-in (same file name, so it
+	# would shadow the packaged one) is redundant once the package ships it.
+	manual=/etc/systemd/system/serial-getty@.service.d/pb2-no-tty-reset.conf
+	if [ -f "$manual" ] && cmp -s "$manual" \
+		/usr/lib/systemd/system/serial-getty@.service.d/pb2-no-tty-reset.conf; then
+		rm -f "$manual"
+		rmdir /etc/systemd/system/serial-getty@.service.d 2>/dev/null || true
+	fi
 	find /etc/systemd/system -maxdepth 2 -type l \
 		\( -name pb2-boot-config.service -o -name pb2-eth-linkdown.service \) \
 		-lname '/etc/systemd/system/*' -delete 2>/dev/null || true

@@ -24,6 +24,7 @@ install -d -m 0755 "${root}/DEBIAN" \
 	"${root}/usr/sbin" \
 	"${root}/usr/lib/systemd/system" \
 	"${root}/usr/lib/systemd/system-shutdown" \
+	"${root}/usr/lib/systemd/system/serial-getty@.service.d" \
 	"${root}/usr/share/keyrings" \
 	"${root}/usr/share/pb2-can-carrier/overlays" \
 	"${root}/usr/share/doc/${pkg}" \
@@ -34,6 +35,7 @@ install -d -m 0755 "${root}/DEBIAN" \
 install -m 0755 "${here}/image/pb2-boot-config.sh"         "${root}/usr/sbin/pb2-boot-config"
 install -m 0644 "${here}/image/pb2-boot-config.service"   "${root}/usr/lib/systemd/system/pb2-boot-config.service"
 install -m 0644 "${here}/image/pb2-eth-linkdown.service"   "${root}/usr/lib/systemd/system/pb2-eth-linkdown.service"
+install -m 0644 "${here}/image/pb2-serial-getty-no-reset.conf" "${root}/usr/lib/systemd/system/serial-getty@.service.d/pb2-no-tty-reset.conf"
 install -m 0755 "${here}/image/pb2-pmic-poweroff.shutdown" "${root}/usr/lib/systemd/system-shutdown/pb2-pmic-poweroff.shutdown"
 install -m 0644 "${here}/image/pb2-i2c-dev.conf"           "${root}/etc/modules-load.d/pb2-i2c-dev.conf"
 install -m 0644 "${here}/image/pb2-apt-preferences"        "${root}/etc/apt/preferences.d/pb2-can-carrier-kernel"

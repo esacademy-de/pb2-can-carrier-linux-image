@@ -371,6 +371,18 @@ may be hidden"):
      stable across multiple reboots and power cycles on real
      hardware** — both journald's forwarded stream and the login prompt
      work correctly on `ttyS7` at the same time.
+   - **Serial gettys no longer send terminal reset/query sequences
+     (`TTYReset=no`, not yet verified on hardware).** With the stock
+     `TTYReset=yes`, every start of a serial getty writes `ESC[!p`,
+     `ESC]104`+BEL and `ESC[?7h`, and then a cursor-position probe
+     (`ESC[6n ESC[32766;32766H ESC[6n`, up to 333 ms with the cursor
+     parked in the far corner). Terminal programs either print the reset
+     as text (`[!p]104` before the login banner) or let concurrent
+     kernel/journald output overwrite earlier lines. Shipped as
+     `/usr/lib/systemd/system/serial-getty@.service.d/pb2-no-tty-reset.conf`
+     in `pb2-can-carrier-support`. Trade-off: systemd no longer resets the
+     line discipline when a getty restarts. PID 1's single reset on
+     `/dev/console` early in boot remains.
    - **The "won't finish booting"/apparent hang with a passive capture
      script is not a bug.** At the very end of boot, `agetty` sends
      `ESC[6n` (a cursor-position query, part of standard terminal
