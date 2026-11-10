@@ -20,6 +20,26 @@ want_name() {
 	esac
 }
 
+# Give interface $1 the final name $2. While the names are being swapped the
+# kernel hands out free "canN" names to any CAN interface that appears at that
+# moment (a USB adapter such as the PCAN-USB FD registers a few seconds after
+# the controllers), so the wanted name may be taken by such a foreign
+# interface. It is moved to the next free name from can3 up, and the rename is
+# retried because another interface may appear in between.
+give_name() {
+	k=0
+	while [ "$k" -lt 5 ]; do
+		if [ -e "/sys/class/net/$2" ]; then
+			n=3
+			while [ -e "/sys/class/net/can$n" ]; do n=$((n + 1)); done
+			ip link set "$2" name "can$n" 2>/dev/null
+		fi
+		ip link set "$1" name "$2" 2>/dev/null && return 0
+		k=$((k + 1))
+	done
+	echo "pb2-can-names: cannot rename $1 to $2" >&2
+}
+
 # The controllers are built into the kernel, so they exist at boot; the short
 # wait only covers a build where they are modules.
 i=0
@@ -49,8 +69,7 @@ for pass in 1 2; do
 				echo "pb2-can-names: cannot rename $cur (is it up?)" >&2
 		else
 			case "$cur" in
-			pb2tmp-*) ip link set "$cur" name "$new" ||
-				echo "pb2-can-names: cannot rename $cur to $new" >&2 ;;
+			pb2tmp-*) give_name "$cur" "$new" ;;
 			esac
 		fi
 	done
